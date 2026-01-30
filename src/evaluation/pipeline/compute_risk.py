@@ -1,0 +1,453 @@
+from collections import Counter
+from tqdm import tqdm
+import os
+import random
+import shutil
+import subprocess
+import gc
+import pandas as pd
+import hydra
+from omegaconf import DictConfig
+
+from src.evaluation.exploration.denominators import select_datasets, read_dataset
+from src.folder_handler import FolderHandler
+# from names_dataset import NameDataset, NameWrapper
+
+
+def prepare_train(cfg):
+    output_path = os.path.join(cfg.output_dir, f'll_train_{cfg.dataset_size}.csv')
+
+    if os.path.exists(output_path):
+        return
+    print("Preparing train")
+
+    dfs = select_datasets(dataset_size=cfg.dataset_size)
+    assert len(dfs['persona_path'].unique()) == 1
+    df_personas_path = dfs['persona_path'].unique()[0]
+
+    list_canaries = []
+
+    df_personas = pd.read_parquet(df_personas_path)
+    for idx, persona in df_personas.iterrows():
+        if persona['random_name'] == True:
+            list_canaries.append(persona['name'])
+
+    df = pd.DataFrame(columns=['dataset_size', 
+                            'pii_rate', 
+                            'pii_type',
+                                'split',
+                                'count',
+                                'value'])
+
+    for idx, row in dfs.iterrows():
+        print("Reading dataset", row['dataset_size'], row['pii_rate'])
+        ds_counter, values = read_dataset(row)
+
+        # for pii_type, values_type in tqdm(values.items(), desc='Inserting PII', total=len(values)):
+        #     values_counter = Counter(values_type)
+        #     for value in tqdm(values_type, desc='Inserting PII - Values', total=len(values_type)):
+        #         if value.startswith('[') and value.endswith(']'):
+        #             continue
+        #         if value in list_canaries:
+        #             # print("Skipping canary", value)
+        #             continue
+        #         if pii_type == 'id':
+        #             pii_type = 'unit_no'
+        #         df.loc[len(df)] = [row['dataset_size'], row['pii_rate'], pii_type, 'train', values_counter[value], value]
+
+        # 1. Pre-convert canaries to a set for O(1) instant lookup speed
+        canaries_set = set(list_canaries)
+
+        # 2. Initialize a list to collect rows (appending to lists is extremely fast)
+        new_rows = []
+
+        for pii_type, values_type in (pbar:=tqdm(values.items(), desc='Inserting PII', total=len(values))):
+            # Calculate frequency once per PII type
+            values_counter = Counter(values_type)
+            pbar.set_description(f'Inserting PII - {pii_type}')
+            
+            # 3. Move logic out of the inner loop to avoid repeating checks
+            save_pii_type = 'unit_no' if pii_type == 'id' else pii_type
+
+            for value in tqdm(values_type, desc='Inserting PII - Values', total=len(values_type), leave=False):
+                # Filter checks
+                if value.startswith('[') and value.endswith(']'):
+                    continue
+                
+                # Fast lookup against the set
+                if value in canaries_set:
+                    continue
+                    
+                # 4. Append to list instead of DataFrame
+                new_rows.append([
+                    row['dataset_size'], 
+                    row['pii_rate'], 
+                    save_pii_type, 
+                    'train', 
+                    values_counter[value], 
+                    value
+                ])
+
+        # 5. Create the DataFrame once and concatenate it (Vectorized operation)
+        if new_rows:
+            # Assumes df.columns matches the order of the list you were inserting
+            new_data = pd.DataFrame(new_rows, columns=df.columns)
+            df = pd.concat([df, new_data], ignore_index=True)
+
+        df.sort_values(by='count', inplace=True, ascending=False)
+        
+    df.drop_duplicates(inplace=True) # why some are duplicated: because of count?
+    # df.to_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_train-mia.csv', index=False)
+    df.to_csv(output_path, index=False)
+
+def prepare_val_true(cfg):
+    output_path = os.path.join(cfg.output_dir, f'll_val_true_{cfg.dataset_size}.csv')
+
+    if os.path.exists(output_path):
+        return
+    print("Preparing val true")
+
+    # take the biggest validation set
+    dfs = select_datasets(dataset_size=cfg.dataset_size)
+    assert len(dfs['persona_path'].unique()) == 1
+    df_personas_path = os.path.join(os.path.dirname(dfs['persona_path'].unique()[0]), 'val.parquet')
+    print("Reading val from", df_personas_path)
+    # val_path = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_personas_v12/val.parquet"
+    df_val = pd.read_parquet(df_personas_path)
+    # print(df_val)
+    # exit()
+    # count has no meaning here
+
+    df = pd.DataFrame(columns=['dataset_size', 
+                            'pii_rate', 
+                            'pii_type',
+                                'split',
+                                'count',
+                                'value'])
+
+    dfs = select_datasets()
+
+    for idx_val, df_val_loc in tqdm(df_val.iterrows(), desc='Preparing val true', total=len(df_val)):
+        # should check if canary
+        if df_val_loc['random_name'] == False:
+            df.loc[len(df)] = [-1, -1, 'name-patient', 'val', -1, df_val_loc['name']]
+            df.loc[len(df)] = [-1, -1, 'name-attending', 'val', -1, df_val_loc['physician_name']]
+            df.loc[len(df)] = [-1, -1, 'unit_no', 'val', -1, str(df_val_loc['unit_no'])]
+
+    df.drop_duplicates(inplace=True)
+    df.sort_values(by='value', inplace=True, ascending=True)
+    # print(df)
+
+    # df.to_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_val_true-mia.csv', index=False)
+    df.to_csv(output_path, index=False)
+
+def merge(cfg):
+
+    output_path = os.path.join(cfg.output_dir, f'll_all_{cfg.dataset_size}.csv')
+
+    if os.path.exists(output_path):
+        return output_path
+    print("Merging")
+
+    df_train = pd.read_csv(os.path.join(cfg.output_dir, f'll_train_{cfg.dataset_size}.csv'))
+    df_val = pd.read_csv(os.path.join(cfg.output_dir, f'll_val_true_{cfg.dataset_size}.csv'))
+    df = pd.concat([df_train, df_val])
+    df.drop_duplicates(inplace=True)
+    df.sort_values(by='count', inplace=True, ascending=False)
+    print(df)
+    # df.to_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_all-mia.csv', index=False)
+    df.to_csv(output_path, index=False)
+    return output_path
+
+# def prepare_last_name(cfg: DictConfig, df_all_path: str):
+#     output_path = os.path.join(cfg.output_dir, f'll_last_name_{cfg.dataset_size}.csv')
+
+#     if os.path.exists(output_path):
+#         return
+#     print("Preparing last name")
+
+#     print("Reading df_all from", df_all_path)
+#     df = pd.read_csv(df_all_path)
+#     df = df[df['pii_type'] == 'name-patient']
+#     df = df[df['split'] == 'train']
+
+#     df['prefix'] = df['value'].str.split(' ').str[0]
+#     df['value'] = df['value'].str.split(' ').str[1]
+
+#     print(df[['prefix', 'value']])
+
+#     exit()
+
+
+def compute_ll(cfg, df_all_path, base=False, extra=False):
+    from transformers import AutoTokenizer, AutoConfig
+    from transformers import AutoModelForCausalLM
+    import torch
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    def load_model(model_name):
+        tok = AutoTokenizer.from_pretrained(model_name)
+        if base == 'scratch':
+            config = AutoConfig.from_pretrained(model_name)
+            model = AutoModelForCausalLM.from_config(config).to(device)
+        else:
+            model = AutoModelForCausalLM.from_pretrained(model_name).to(device)
+        model.eval()
+        return tok, model
+
+    # import inside
+    # model (n_epochs) [base = 0]
+    # token count
+    # average_ll
+
+    # no if different models
+    # cache = {}
+    @torch.no_grad()
+    def name_logprob_given_prompt(prompt, name, tau=1.0, tok=None, model=None, is_name=False):
+        # Build input ids for: [prompt] + space + [name]
+        # Leading space often matters for tokenization in LLMs.
+        full_prefix = prompt.rstrip()
+        text = full_prefix + " " + name
+
+        ids = tok(text, return_tensors="pt").to(device)
+        input_ids = ids["input_ids"]
+
+        if is_name:
+            full_prefix_with_first_name = full_prefix + " " + name.split(' ')[0]
+            ids_with_first_name = tok(full_prefix_with_first_name, return_tensors="pt").to(device)['input_ids'][0]
+            # input_ids_with_first_name = ids_with_first_name["input_ids"]
+
+        out = model(input_ids, use_cache=False)
+        logits = out.logits  # shape [1, T, V]
+        if tau != 1.0:
+            logits = logits / tau
+
+        log_probs = torch.log_softmax(logits, dim=-1)
+
+        # We want p(name_tokens | prompt_tokens). So:
+        # split at the prompt boundary
+        # Add a single space token if tokenizer uses it; safest is to recompute split by re-encoding:
+        ids_with_space = tok(full_prefix, return_tensors="pt").to(device)["input_ids"][0]
+        prompt_len = ids_with_space.shape[0]
+
+        if is_name:
+            prompt_len_with_first_name = ids_with_first_name.shape[0]
+
+        # tokenization artifacts: space is encoded with the new completion, so not part of the prompt
+
+        # name tokens are the remaining suffix
+        full_ids = input_ids[0]
+        name_ids = full_ids[prompt_len:]
+        
+        n_tokens = len(name_ids)
+        # print(full_prefix)
+        # print(name)
+        # print(full_ids)
+        # exit()
+
+        # Sum log p(token_t | prefix up to t-1)
+        # Next-token log-prob for token at position t is taken from log_probs at position t-1
+        lp = 0.0
+        list_tokens = []
+        list_log_probs = []
+        for i, token_id in enumerate(name_ids):
+            pos = prompt_len + i - 1  # previous position predicts current token
+            lp += log_probs[0, pos, token_id].item()
+            list_tokens.append(token_id)
+            list_log_probs.append(log_probs[0, pos, token_id].item())
+
+        if is_name:
+            lp_with_first_name = 0.0
+            list_tokens_with_first_name = []
+            list_log_probs_with_first_name = []
+            name_ids_with_first_name = full_ids[prompt_len_with_first_name:]
+            n_tokens_with_first_name = len(name_ids_with_first_name)
+            for i, token_id in enumerate(name_ids_with_first_name):
+                pos = prompt_len_with_first_name + i - 1  # previous position predicts current token
+                lp_with_first_name += log_probs[0, pos, token_id].item()
+                list_tokens_with_first_name.append(token_id)
+                list_log_probs_with_first_name.append(log_probs[0, pos, token_id].item())
+
+        # target_positions = torch.arange(prompt_len, prompt_len + len(name_ids))
+        # predictor_positions = target_positions - 1
+        # lp = log_probs[0, predictor_positions, name_ids].sum().item()
+
+        # cache[text] = lp, n_tokens
+        if is_name:
+            return lp, lp_with_first_name, n_tokens, n_tokens_with_first_name, list_tokens, list_log_probs, list_tokens_with_first_name, list_log_probs_with_first_name
+        else:
+            return lp, 0.0, n_tokens, 0, list_tokens, list_log_probs, None, None
+            # return lp, n_tokens, list_tokens, list_log_probs, None, None, 0  # log-prob
+
+    # for models
+    prompts = {
+        # 'name': ['Name: '],
+        # 'name-patient': ['Name: '],
+
+        'name-patient': ['Name: ', 'Patient: '],
+        # 'name-attending': ['Name: ', 'Attending: '],
+
+        # 'physician_name': ['Attending: '],
+        'unit_no': ['MRN: ', 'Patient #: '],
+        # 'id': ['MRN: '],
+        # 'phone': ['Phone: '],
+        # 'email': ['Email: '],
+        # 'address': ['Address: '],
+    }
+    if base == 'scratch':
+        df_models = pd.DataFrame(columns=['dataset_size', 'pii_rate', 'n_epochs', 'model_path'])
+        if cfg.model_size == '1B':
+            df_models.loc[len(df_models)] = [cfg.dataset_size, 0.0, -1, '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/Llama_3.2-1B']
+        elif cfg.model_size == '8B':
+            df_models.loc[len(df_models)] = [cfg.dataset_size, 0.0, -1, '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/Llama_3.1-8B']
+        else:
+            raise ValueError(f"Model size {cfg.model_size} not supported")
+    elif base:
+        df_models = pd.DataFrame(columns=['dataset_size', 'pii_rate', 'n_epochs', 'model_path'])
+        if cfg.model_size == '1B':
+            df_models.loc[len(df_models)] = [cfg.dataset_size, 0.0, 0, '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/Llama_3.2-1B']
+        elif cfg.model_size == '8B':
+            df_models.loc[len(df_models)] = [cfg.dataset_size, 0.0, 0, '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/Llama_3.1-8B']
+        else:
+            raise ValueError(f"Model size {cfg.model_size} not supported")
+    else:
+        df_models = prepare_models(cfg) # add base model
+
+    # print(df_models['model_path'].unique())
+    # input()
+
+    # exit()
+
+    if not extra:
+        df_all = pd.read_csv(df_all_path)
+        df_all.replace({'name': 'name-patient', 'physician_name': 'name-attending'}, inplace=True)
+        df_output = pd.DataFrame(columns=['dataset_size', 'pii_rate', 'n_epochs', 'pii_type', 'prompt', 'split','count', 'value', 'll', 'n_tokens', 'list_tokens', 'list_log_probs', 'll_with_first_name', 'n_tokens_with_first_name', 'list_tokens_with_first_name', 'list_log_probs_with_first_name'])
+        output_path_tmp = os.path.join(cfg.output_dir, f'll_all_output_{base}_{cfg.model_size}_{cfg.dataset_size}_tmp_batch.csv')
+        if os.path.exists(output_path_tmp):
+            df_output = pd.read_csv(output_path_tmp)
+        for index, row in df_models.iterrows():
+            print("Loading model", row['model_path'])
+            tok, model = load_model(row['model_path'])
+            for key, prompts_key in prompts.items():
+                if base:
+                    df_all_filtered = df_all[df_all['pii_type'] == key]
+                    # df_all_filtered.drop_duplicates(inplace=True) # issue with split
+                    df_all_filtered.drop_duplicates(subset=['value'], inplace=True)
+                else:
+                    df_all_filtered = df_all[
+                        ((df_all['pii_type'] == key) &
+                        (df_all['dataset_size'] == row['dataset_size']) &
+                        (df_all['pii_rate'] == row['pii_rate']) &
+                        (df_all['split'] == 'train')) |
+                        ((df_all['pii_type'] == key) &
+                        (df_all['split'] == 'val'))
+                    ]
+                # print(row['dataset_size'], row['pii_rate'], row['n_epochs'], key)
+                # print(row['dataset_size'], row['pii_rate'], row['n_epochs'], key, df_all_filtered)
+                
+                # check if at least one row for this 
+                mask = (df_output['dataset_size'] == row['dataset_size']) & (df_output['pii_rate'] == row['pii_rate']) & (df_output['n_epochs'] == row['n_epochs']) & (df_output['pii_type'] == key) & (df_output['prompt'] == prompts_key[0])
+                if mask.any():
+                    print(f"Skipping {row['dataset_size']}, {row['pii_rate']}, {row['n_epochs']}, {key}, {prompts_key[0]} because it already exists")
+                    continue
+                else:
+                    print("Missing row for", row['dataset_size'], row['pii_rate'], row['n_epochs'], key, prompts_key[0])
+                
+                for prompt in prompts_key:
+                    for idx, row_all in tqdm(df_all_filtered.iterrows(), desc='Computing LL for ' + str((prompts_key, prompt)), total=len(df_all_filtered)):
+                        # ll, n_tokens, list_tokens, list_log_probs = name_logprob_given_prompt(prompt, row_all['value'], tok=tok, model=model)
+                        is_name = True if 'name' in key else False
+                        ll, ll_with_first_name, n_tokens, n_tokens_with_first_name, list_tokens, list_log_probs, list_tokens_with_first_name, list_log_probs_with_first_name = name_logprob_given_prompt(prompt, row_all['value'], tok=tok, model=model, is_name=is_name)
+                        # have a c
+                        # df_output.loc[len(df_output)] = [row['dataset_size'], row['pii_rate'], row['n_epochs'], key, prompt, row_all['split'], row_all['count'], row_all['value'], ll, n_tokens, list_tokens, list_log_probs]
+                        # break
+                        df_output.loc[len(df_output)] = [row['dataset_size'], row['pii_rate'], row['n_epochs'], key, prompt, row_all['split'], row_all['count'], row_all['value'], ll, n_tokens, list_tokens, list_log_probs, ll_with_first_name, n_tokens_with_first_name, list_tokens_with_first_name, list_log_probs_with_first_name]
+
+                
+                df_output.to_csv(output_path_tmp, index=False)
+                
+                    # break
+                # break
+            # break
+                    # print("Saving LL for", prompt)
+            del tok, model
+            gc.collect()
+            torch.cuda.empty_cache()
+            print("Cleaned up model")
+        output_path = os.path.join(cfg.output_dir, f'll_all_output_{base}_{cfg.model_size}_{cfg.dataset_size}_batch.csv')
+        df_output.to_csv(output_path, index=False)
+
+    else:
+        raise NotImplementedError("Extra not implemented")
+        df_extra = pd.read_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/probability_universe_distribution_names_extra.csv')
+        df_extra_2 = pd.read_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/probability_universe_distribution_names_extra_2.csv')
+        df_extra = pd.concat([df_extra, df_extra_2])
+        df_extra.drop_duplicates(inplace=True)
+        df_extra = df_extra[::len(df_extra)//4000]
+        df_output = pd.DataFrame(columns=['dataset_size', 'pii_rate', 'n_epochs', 'value', 'll', 'n_tokens', 'list_tokens', 'list_log_probs'])
+        for index, row in df_models.iterrows():
+            print("Loading model", row['model_path'])
+            tok, model = load_model(row['model_path'])
+            for idx, row_all in tqdm(df_extra.iterrows(), desc='Computing LL for extra names', total=len(df_extra)):
+                ll, n_tokens, list_tokens, list_log_probs = name_logprob_given_prompt('Name: ', row_all['name'], tok=tok, model=model)
+                df_output.loc[len(df_output)] = [row['dataset_size'], row['pii_rate'], row['n_epochs'], row_all['name'], ll, n_tokens, list_tokens, list_log_probs]
+        df_output.to_csv(f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_all_output_{base}_extra.csv', index=False)
+            
+def prepare_models(cfg):
+    fh = FolderHandler()
+    df_models = fh.load_models()
+    df_models = df_models[df_models['injection_strategy'] == 'manual']
+    df_models = df_models[df_models['dataset_size'] == cfg.dataset_size]
+
+    # df_models = df_models[df_models['model_name'] == 'Llama_3.2']
+
+    df_models = df_models[df_models['model_id'] > 40]
+
+    df_models = df_models[df_models['model_size'] == cfg.model_size]
+    # df_models = df_models[df_models['n_epochs'] == cfg.n_epochs]
+
+    df_models = df_models[['dataset_size', 'pii_rate', 'n_epochs', 'model_path']]
+
+
+    # dict_models = {}
+    # for index, row in df_models.iterrows():
+    #     dict_models[(row['dataset_size'], row['pii_rate'])] = (row['n_epochs'], row['model_path'])
+
+    # print(df_models)
+
+    for index, row in df_models.iterrows():
+        model_path = row['model_path']
+        # check if at least one file file pytorch_model in it (can be multiple)
+        files = os.listdir(model_path)
+        is_preprocessed = False
+        for file in files:
+            if "pytorch_model" in file:
+                is_preprocessed = True
+                break
+        if not is_preprocessed:
+            print(f"Preprocessing model {model_path}")
+            cmd = f"python {model_path}/zero_to_fp32.py {model_path} {model_path}"
+            subprocess.run(cmd, shell=True)
+
+    return df_models
+
+
+@hydra.main(version_base=None, config_path="../../configs/evaluation/log_likelihood", config_name="eval")
+def main(cfg: DictConfig):
+    os.makedirs(cfg.output_dir, exist_ok=True)
+    print("Running")
+    prepare_train(cfg)
+    prepare_val_true(cfg)
+    df_all_path = merge(cfg)
+    # prepare_last_name(cfg, df_all_path)
+
+    # exit()
+    
+    compute_ll(cfg, df_all_path, base=True)
+    # exit()
+    compute_ll(cfg, df_all_path, base=False)
+
+if __name__ == "__main__":
+    main()
+
+    

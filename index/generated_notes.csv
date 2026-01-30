@@ -1,0 +1,2 @@
+generated_notes_id,model_id,n_notes,temperature,top_p,min_p,top_k,repetition_penalty,generated_notes_path,status
+0,0,100,1.0,0.8,0.0,50,1.2,/path/to/outputs/generation,pending

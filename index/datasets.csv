@@ -1,0 +1,2 @@
+dataset_id,dataset_size,pii_rate,kg,injection_strategy,name_strategy,sampling_strategy,dataset_path,status,persona_path,person_path_name
+0,10,0.1,no-kg,manual,real,uniform,/path/to/data/train_10_0.1_no-kg.json,done,/path/to/data/train_10.parquet,train_10.parquet

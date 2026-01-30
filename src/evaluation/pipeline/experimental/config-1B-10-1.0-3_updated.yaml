@@ -1,0 +1,54 @@
+# Pipeline configuration file
+# Modify these paths to run with different models/data
+# Filtering parameters (for check_names.py)
+filters:
+  prompt: "Name: "
+  pii_rate: 1.0
+  n_epochs: 3
+  dataset_size: 10
+  model: 1B
+  pii_types:
+    - name-patient
+    - name-attending
+
+# Base directory
+base_dir: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric
+
+# Output directory for this experiment
+output_dir: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output/{dataset_size}_{model}_{pii_rate}_{n_epochs}_{budget}
+
+# Input files
+inputs:
+  budget: 10000
+
+  # Generation CSV file (from experimental_recall.py)
+  generation_file: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-all/generation_False_all_{dataset_size}_{model}_{pii_rate}_{n_epochs}_{budget}.csv
+  
+  # Source file with ll values from pipeline (for joining)
+  src_ll_file: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/ll_all_output_False_{model}_{dataset_size}_batch.csv
+  src_ll_file_base: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/ll_all_output_True_{model}_{dataset_size}_batch.csv
+
+# Models
+models:
+  # Base/pretrained model
+  base_model_1B: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/Llama_3.2-1B
+
+  base_model_8B: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/Llama_3.1-8B
+
+  # Finetuned model
+  # finetuned_model: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning_auto/Llama_3.2-1B-10-1.0-False-vllm-manual-10-0-5fa3a14b-72b3-4e2c-b090-d3edb1d117c9/checkpoint-3348
+
+# Classifier and training data (for evaluation)
+# classifier:
+#   # Pre-trained classifier
+#   clf_file: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-calibration/clf_name-patient_1B_10_1.0_3.pkl
+  
+#   # Training samples (to exclude from evaluation)
+#   df_temp_sub_file: /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-calibration/df_temp_sub_name-patient_1B_10_1.0_3.csv
+
+
+
+# Prompts for ll computation
+prompts:
+  - "Name: "
+  - "Patient: "

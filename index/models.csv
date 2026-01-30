@@ -1,0 +1,2 @@
+model_id,model_name,type,model_size,dataset_id,n_epochs,model_path,src_model_path,status
+0,BaseModel,instruct,8B,0,0,/path/to/models/base-8B,/path/to/models/base-8B,done
