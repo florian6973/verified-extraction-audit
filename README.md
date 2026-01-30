@@ -45,7 +45,7 @@ End-to-end flow:
 
 ## Step 0: MIMIC notes and splits
 
-MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content/mimic-iv-note/2.2/). The script that builds splits from raw MIMIC files is **not** included in this anonymized repo.
+MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content/mimic-iv-note/2.2/).
 
 **What you need to do:**
 
@@ -53,12 +53,30 @@ MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content
    - `discharge.csv` (and any other note tables you use).
 2. Optionally from [MIMIC-IV](https://physionet.org/content/mimiciv/3.1/): `admissions.csv`, `patients.csv`.
 3. Place them under `data/raw/` (or your chosen `data_dir`).
-4. Build train/val/test splits (e.g. by patient ID) and **filter/mask** note text so that PII slots are replaced with `___` placeholders. The rest of the pipeline expects:
-   - **Splits:** Parquet files per split, e.g. `data/processed/splits/train_1.parquet`, `val_1.parquet`, etc., with at least columns such as `text`, `subject_id`, and note identifiers.
-   - **Filtered notes:** Same structure but with `___` where PII will be injected (e.g. `data/processed/splits_filtered_v8/`).
-   - **Personas:** One parquet per split with synthetic persona rows aligned to notes (e.g. `data/processed/splits_personas_v8/`), produced by the preprocessing step below.
+4. **Build splits** using the included script (Hydra config: `src/configs/dataset/mimic.yaml`; default `data_dir: data/raw`, `output_dir: data/processed`):
 
-If you have the full project repository, you can use its `src/dataset/splits/mimic.py` (and config) to go from `data/raw/discharge.csv` → splits and instruct JSON. Otherwise, implement equivalent logic and match the paths expected by the scripts below.
+   ```bash
+   python -m src.dataset.splits.mimic
+   ```
+
+   Override paths via Hydra, e.g.:
+
+   ```bash
+   python -m src.dataset.splits.mimic data_dir=data/raw output_dir=data/processed
+   ```
+
+   This writes parquet files under `output_dir/splits/` (e.g. `train_1`, `val_1`, `train_10`, `val_10`, `train`, `val`, `test`). You still need to **filter/mask** note text so that PII slots are `___` (e.g. `data/processed/splits_filtered_v8/`) and build **personas** (Step 1).
+
+5. **Optional:** compute split statistics for papers:
+
+   ```bash
+   python -m src.dataset.splits.stats_to_latex --splits_dir data/processed/splits --output outputs/splits/stats_table.tex
+   ```
+
+The rest of the pipeline expects:
+- **Splits:** Parquet files per split with at least `text`, `subject_id`, and note identifiers.
+- **Filtered notes:** Same structure with `___` where PII will be injected (e.g. `data/processed/splits_filtered_v8/`).
+- **Personas:** One parquet per split (e.g. `data/processed/splits_personas_v8/`), produced in Step 1.
 
 ---
 
@@ -122,6 +140,8 @@ From the repo root.
   - `index/models.csv` — one row per (base model, dataset, checkpoint) you want to train (columns at least: `model_id`, `model_name`, `type`, `model_size`, `dataset_id`, `n_epochs`, `model_path`, `src_model_path`, `status`).
 
   Point `dataset_path` to your SFT JSON (e.g. `data/processed/splits_sft_with_index/train_1_0.05_no-kg.json`) and `model_path` / `src_model_path` to your output dir and base model.
+
+- **Job config (reference):** A sample finetuning job config is in `src/configs/jobs/submit_finetuning_job_1b_large.yaml` (base model, dataset size, epochs, PII rate, etc.). Set `base_path` and `home_path` to your repo root and home; use it with your own job launcher if you have one.
 
 - **Run training** (single GPU, using `model_id` from the index):
 
@@ -205,9 +225,7 @@ Goal: run the pipeline once with minimal data (no real MIMIC download required f
    - Ensure `index/datasets.csv` and `index/models.csv` exist (placeholders are in the repo). For a real minimal run, add one dataset row whose `dataset_path` points to an SFT JSON (from Step 1), and one model row whose `dataset_id` matches, `src_model_path` points to a base model, and `model_path` points to where you want the checkpoint.
 
 3. **MIMIC / splits**
-   - Either use the full project’s MIMIC download and split script to produce `splits/`, `splits_filtered_*`, and `splits_personas_*`, or create minimal parquet/JSON by hand so that:
-     - Personas and filtered notes exist for at least one split (e.g. `train_1`, `val_1`).
-     - One SFT JSON exists (e.g. `train_1_0.05_no-kg.json`) and is referenced in `index/datasets.csv`.
+   - Download MIMIC-IV `discharge.csv` to `data/raw/`, then run `python -m src.dataset.splits.mimic` to build `data/processed/splits/`. Then create filtered notes (with `___` placeholders) and personas for at least one split (e.g. `train_1`, `val_1`), and one SFT JSON (e.g. `train_1_0.05_no-kg.json`) referenced in `index/datasets.csv`. Alternatively create minimal parquet/JSON by hand to match that layout.
 
 4. **Preprocessing**
    - Run `fake_persona` (or your wrapper) → personas parquet.
@@ -233,7 +251,9 @@ This gives you a first end-to-end pass: **MIMIC (or minimal splits) → preproce
 ## Layout (summary)
 
 - `src/dataset/pii_insertion/` — PII insertion and sampling (fake personas, injection, sampling, validation).
+- `src/dataset/splits/` — Build MIMIC splits (`mimic.py`) and optional stats table (`stats_to_latex.py`); config in `src/configs/dataset/mimic.yaml`.
 - `src/finetuning/` — Training (`finetune.py`), utils, post-processing of model index.
+- `src/configs/jobs/` — Sample finetuning job config (e.g. `submit_finetuning_job_1b_large.yaml`).
 - `src/evaluation/pipeline/` — Risk computation (`compute_risk.py`, `compute_risk_batch.py`) and plotting (`plot_relative_leakage_risk.py`, etc.); `experimental/` and `experimental/mia/` for extra analyses.
 - `src/evaluation/exploration/` — Helpers (e.g. `denominators.py`) used by the pipeline.
 - `src/configs/evaluation/log_likelihood/` — Hydra config for evaluation.

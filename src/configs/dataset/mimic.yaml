@@ -1,0 +1,5 @@
+defaults:
+  - _self_
+
+data_dir: "data/raw"
+output_dir: "data/processed"
