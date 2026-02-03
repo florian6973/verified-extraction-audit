@@ -1,3 +1,4 @@
+from src._repo import REPO_ROOT
 """
 Script to replot combined metrics from CSV files:
 - Average absolute leakage VS PII level
@@ -427,9 +428,9 @@ def create_combined_plot(df_data, metric_name, y_col, y_err_col, y_label, epoch_
 
 def main():
     # Define directories
-    plots_dir = '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/base-analysis'
-    mia_dir = '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia'
-    output_dir = '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/combined'
+    plots_dir = (REPO_ROOT + '/outputs/pii_leakage/pipeline/plots/base-analysis')
+    mia_dir = (REPO_ROOT + '/outputs/pii_leakage/pipeline/plots/mia')
+    output_dir = (REPO_ROOT + '/outputs/pii_leakage/pipeline/plots/combined')
     
     os.makedirs(output_dir, exist_ok=True)
     

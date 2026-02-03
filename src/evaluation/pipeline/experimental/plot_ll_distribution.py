@@ -7,7 +7,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Base paths
-BASE_DIR = '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric'
+from src._repo import REPO_ROOT
+BASE_DIR = REPO_ROOT
 OUTPUT_DIR = os.path.join(BASE_DIR, 'outputs/pii_leakage/experimental-recall')
 
 # Input file

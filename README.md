@@ -86,12 +86,7 @@ From the repo root.
 
 1. **Generate synthetic personas** (e.g. patient/physician names and other PII):
 
-   The `FakePersonas` class in `src/dataset/pii_insertion/fake_persona.py` is used by downstream steps. You typically run a small script or notebook that:
-   - Loads your split parquets (e.g. `splits/` or `splits_filtered_*`),
-   - Instantiates `FakePersonas`, creates personas per note/split,
-   - Saves persona data to e.g. `data/processed/splits_personas_v8/<split>.parquet`.
-
-   (Exact entry point depends on your wrapper; the class API is in `fake_persona.py`.)
+   The `FakePersonas` class in `src/dataset/pii_insertion/fake_persona.py` is used to generate the synthetic PII. 
 
 2. **PII injection** (fill `___` with synthetic PII using an LLM or manual mapping):
 
@@ -105,6 +100,8 @@ From the repo root.
      ```
 
      Outputs go under `outputs/pii_insertion/direct/<model>_v8/<split>/` (tags, JSON, etc.). Paths assume personas at `data/processed/splits_personas_v8/<split>.parquet` and texts at `data/processed/splits_filtered_v8/<split>.parquet`; adjust in the script if your layout differs.
+
+     This step is necessary to determine the semantic tags of each blank.
 
    - **Manual insertion:** use `manual_insertion.py` with your paths (see script and `src/dataset/pii_insertion/README.md`).
 
@@ -123,7 +120,6 @@ From the repo root.
 
 4. **Validation (optional):**  
    - `persona_check.py` — check persona vs. note alignment and duplicates.  
-   - `evaluate_pii.py` — manual review UI for injected PII (see `src/dataset/pii_insertion/README.md`).
 
 ---
 
@@ -158,10 +154,7 @@ From the repo root.
 
 ## Step 3: Sampling (generation)
 
-Generating text from the trained model is **not** implemented in this export. The evaluation pipeline expects:
-- Generated notes (and/or log-likelihood outputs) for the evaluation script you use (e.g. `compute_risk` / `compute_risk_batch`).
-
-If you have the full project, use its generation/inference script (e.g. vLLM or Hugging Face) to produce outputs in the format expected by the evaluation step. For a minimal first run you can skip generation and only run evaluation on precomputed CSVs (see below).
+Generating text from the trained model is **not** implemented in this export.
 
 ---
 
@@ -265,6 +258,3 @@ See `EXPORT_PLAN.md` for what was exported and which paths to override.
 
 ---
 
-## License
-
-MIT.

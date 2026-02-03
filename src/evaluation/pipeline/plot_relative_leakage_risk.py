@@ -18,6 +18,8 @@ import os
 import argparse
 import pickle
 
+from src._repo import REPO_ROOT
+
 def load_and_filter_data(file_path, splits=['train'], prompt='Name: '):
     """Load CSV and filter for split(s) and prompt."""
     print(f"Loading: {file_path}")
@@ -532,10 +534,10 @@ def plot_relative_leakage_risk(df_results, output_path, percentile=90, include_v
 def main():
     parser = argparse.ArgumentParser(description='Plot relative leakage risk')
     parser.add_argument('--output', type=str,
-                        default='/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/relative_emission_probability_change_leakage_risk.png',
+                        default=(REPO_ROOT + '/outputs/pii_leakage/pipeline/plots/relative_emission_probability_change_leakage_risk.png',
                         help='Output path for the plot')
     parser.add_argument('--top_names_output', type=str,
-                        default='/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/top_100_names_by_factor.csv',
+                        default=(REPO_ROOT + '/outputs/pii_leakage/pipeline/plots/top_100_names_by_factor.csv',
                         help='Output path for top 100 names CSV')
     parser.add_argument('--top_n', type=int, default=100,
                         help='Number of top names to output (default: 100)')
@@ -574,7 +576,7 @@ def main():
     print(f"Processing dataset sizes: {dataset_sizes}")
     
     # File paths
-    base_dir = '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline'
+    base_dir = os.path.join(REPO_ROOT, "outputs", "pii_leakage", "pipeline")
 
     if os.path.exists(base_dir):
         

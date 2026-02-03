@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src._repo import REPO_ROOT
 """
 Plot FPR vs TPR for specific configurations at two budgets (10^4 and 10^7).
 For 1B model, large (100), no overfit (3) & overfit (10), 0.01 PII and 1 PII.
@@ -15,10 +16,10 @@ import json
 import pickle
 
 # Base directory containing all experimental recall outputs
-BASE_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output"
+BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
 
 # Output directory for plots
-OUTPUT_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output/fpr_tpr_plots"
+OUTPUT_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output/fpr_tpr_plots"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Target budgets

@@ -5,10 +5,11 @@ from tqdm import tqdm
 import pandas as pd
 from json_repair import json_repair
 
+from src._repo import REPO_ROOT
 for dataset in ['val_1', 'train_1']:#, 'val_10', 'train_10', 'val', 'train']:
 # for dataset in ['train', 'val']:
-    base_folder = f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_insertion/direct/gemini-2.5-flash-preview-05-20_v8/{dataset}"
-    persona_path = f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_personas_v12/"
+    base_folder = f" + REPO_ROOT + "/outputs/pii_insertion/direct/gemini-2.5-flash-preview-05-20_v8/{dataset}"
+    persona_path = f" + REPO_ROOT + "/data/processed/splits_personas_v12/"
 
     tags_folder = f"{base_folder}/tags"
     completion_folder = f"{base_folder}/json"

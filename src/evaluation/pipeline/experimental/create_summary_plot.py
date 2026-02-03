@@ -1,3 +1,4 @@
+from src._repo import REPO_ROOT
 """
 Create summary plots for experimental recall outputs.
 Plots TPR, FPR, and total recall as a function of pii_rate.
@@ -12,7 +13,7 @@ import re
 from pathlib import Path
 
 # Base directory containing all experimental recall outputs
-BASE_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output"
+BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
 
 # Path to threshold_fpr5_results.csv
 # THRESHOLD_FPR5_CSV = os.path.join(BASE_DIR, "threshold_fpr5_results.csv")

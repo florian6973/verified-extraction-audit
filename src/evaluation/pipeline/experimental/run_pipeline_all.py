@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src._repo import REPO_ROOT
 """
 Run the complete pipeline for all generation files in experimental-recall-all directory.
 For each file, extracts parameters (model, dataset_size, n_epochs, pii_rate) and creates
@@ -204,13 +205,13 @@ def main():
     parser.add_argument(
         '--template-config',
         type=str,
-        default='/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/src/evaluation/pipeline/experimental/config-1B-10-1.0-3_updated.yaml',
+        default=(REPO_ROOT + '/src/evaluation/pipeline/experimental/config-1B-10-1.0-3_updated.yaml',
         help='Path to template config file'
     )
     parser.add_argument(
         '--input-dir',
         type=str,
-        default='/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-all',
+        default=(REPO_ROOT + '/outputs/pii_leakage/experimental-recall-all'),
         help='Directory containing generation files'
     )
     parser.add_argument(

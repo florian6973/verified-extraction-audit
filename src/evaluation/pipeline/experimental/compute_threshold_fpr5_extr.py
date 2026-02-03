@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src._repo import REPO_ROOT
 """
 Compute the best threshold for FPR < 5% using cross-fitting correctly.
 
@@ -408,7 +409,7 @@ def main():
     parser.add_argument(
         "--base-dir",
         type=str,
-        default="/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output",
+        default=" + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output",
         help="Base directory containing experimental-recall-output subdirectories"
     )
     parser.add_argument(

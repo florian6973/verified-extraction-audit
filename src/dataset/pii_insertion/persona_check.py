@@ -4,6 +4,7 @@ import seaborn as sns
 import numpy as np
 import os
 
+from src._repo import REPO_ROOT
 def check_persona(path_1, path_2, split_version):
     # check if only different subjects
     # check name redundancy
@@ -61,7 +62,7 @@ def check_persona(path_1, path_2, split_version):
 
     print("\nIntersection Counts Summary:")
     print(intersection_counts)
-    intersection_counts.to_csv(f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/splits/intersection_counts_{split_version}.csv")
+    intersection_counts.to_csv(f" + REPO_ROOT + "/outputs/splits/intersection_counts_{split_version}.csv")
     return ok, intersection_counts
 
 # problem with seed initialization
@@ -113,7 +114,7 @@ def plot_name_distribution(path, title):
     plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45, ha='right')
     
     plt.tight_layout()
-    plt.savefig(f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/splits/name_distribution_{title}.png')
+    plt.savefig(f(REPO_ROOT + '/outputs/splits/name_distribution_{title}.png')
     plt.close()
 
 def check_random_names(path):
@@ -135,7 +136,7 @@ def plot_name_duplication_distribution(path, title):
     empty_first_name = df['name'].map(lambda x: x.split()[0].lower() == "mr.")
     print(df[empty_first_name]['name'].value_counts())
     print(empty_first_name.value_counts())
-    df[empty_first_name]['name'].value_counts().to_csv(f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/splits/name_distribution_{title}_empty_first_name.csv')
+    df[empty_first_name]['name'].value_counts().to_csv(REPO_ROOT + f'/outputs/splits/name_distribution_{title}_empty_first_name.csv')
     # exit()
     name_counts = df['name'].value_counts()
     # Count how many names appear 1 time, 2 times, etc.
@@ -171,7 +172,7 @@ def plot_name_duplication_distribution(path, title):
              bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     plt.tight_layout()
-    plt.savefig(f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/splits/name_duplication_distribution_{title}.png')
+    plt.savefig(f(REPO_ROOT + '/outputs/splits/name_duplication_distribution_{title}.png')
     plt.close()
 
 if __name__ == "__main__":
@@ -181,13 +182,13 @@ if __name__ == "__main__":
     # for version in [1, version_new]:
 
     for suffix in ["", "_10", "_1"]:
-        path = f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_personas_v{version_new}/train{suffix}.parquet"
+        path = f" + REPO_ROOT + "/data/processed/splits_personas_v{version_new}/train{suffix}.parquet"
         check_random_names(path)
     exit()
 
     for version in [version_new]:
-        path_1 = f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_personas_v{version}/train.parquet"
-        path_2 = f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_personas_v{version}/val.parquet"
+        path_1 = f" + REPO_ROOT + "/data/processed/splits_personas_v{version}/train.parquet"
+        path_2 = f" + REPO_ROOT + "/data/processed/splits_personas_v{version}/val.parquet"
         print(check_persona(path_1, path_2, "v" + str(version)))
         
         # Plot name distributions for both paths
@@ -199,9 +200,9 @@ if __name__ == "__main__":
         plot_name_duplication_distribution(path_2, f"val_v{version}")
 
     # load the intersection counts for the two versions
-    intersection_counts_v1 = pd.read_csv(f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/splits/intersection_counts_v1.csv")
+    intersection_counts_v1 = pd.read_csv(f" + REPO_ROOT + "/outputs/splits/intersection_counts_v1.csv")
     intersection_counts_v1 = intersection_counts_v1.set_index('column_name')
-    intersection_counts_v2 = pd.read_csv(f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/splits/intersection_counts_v{version_new}.csv")
+    intersection_counts_v2 = pd.read_csv(f" + REPO_ROOT + "/outputs/splits/intersection_counts_v{version_new}.csv")
     intersection_counts_v2 = intersection_counts_v2.set_index('column_name')
     # compute  ratio between intersection counts of v1 and v2
     ratio = intersection_counts_v1['intersection_count'] / intersection_counts_v2['intersection_count']
@@ -239,7 +240,7 @@ if __name__ == "__main__":
     latex_table = latex_table.replace('\\end{tabular}', '\\end{tabular}\\end{center}')
 
     # Save the LaTeX table
-    output_path = f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/splits/combined_stats_v{version_new}.tex'
+    output_path = REPO_ROOT + f'/outputs/splits/combined_stats_v{version_new}.tex'
     with open(output_path, 'w') as f:
         f.write(latex_table)
     print(f"LaTeX table written to {output_path}")

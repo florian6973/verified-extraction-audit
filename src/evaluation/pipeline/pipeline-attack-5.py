@@ -7,8 +7,9 @@ import warnings
 # -----------------------
 # User settings
 # -----------------------
-# CSV_PATH = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-calibration/df_temp_sub_name-patient_1B_10_0.1_3.csv"
+# CSV_PATH = " + REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-calibration/df_temp_sub_name-patient_1B_10_0.1_3.csv"
 # TAU = 0.7
+from src._repo import REPO_ROOT
 PI_COL = "p_ft_Name: "
 SPLIT_COL = "split"         # "train" = member, "val" = non-member
 SCORE_COL = "y_pred_proba"  # verifier score
@@ -31,13 +32,13 @@ dataset_size = config['filters']['dataset_size']
 pii_rate = config['filters']['pii_rate']
 n_epochs = config['filters']['n_epochs']
 
-# CSV_PATH = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3_p.csv"
+# CSV_PATH = " + REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3_p.csv"
 CSV_PATH = os.path.join(get_output_dir(config), f"scores_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}_p.csv")
 PI_COL = "p_ft_Name: "
 SPLIT_COL = "split_x"         # "train" = member, "val" = non-member
 SCORE_COL = "score_oof_member_proba"  # verifier score
 
-# CSV_PATH = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-0.1/all_names_ll_computed_with_scores.csv"
+# CSV_PATH = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-0.1/all_names_ll_computed_with_scores.csv"
 # TAU = 0.5
 # column_name = "score_oof_member_proba"
 # groundtruth_column = "groundtruth"
@@ -60,7 +61,7 @@ BUDGETS = np.array([
     5000000000000, 10000000000000,
 ], dtype=float)
 
-# plots_dir = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/pipeline-attack-5"
+# plots_dir = " + REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/pipeline-attack-5"
 plots_dir = os.path.join(get_output_dir(config), "plots_theory")
 os.makedirs(plots_dir, exist_ok=True)
 

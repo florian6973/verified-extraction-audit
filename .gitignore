@@ -178,3 +178,6 @@ trash/
 tmp/
 debug_trash/
 trash_perplexity/
+
+EXPORT_PLAN.md
+EXPORT.md

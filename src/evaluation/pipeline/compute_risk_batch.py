@@ -11,6 +11,7 @@ from omegaconf import DictConfig
 import torch
 import numpy as np
 
+from src._repo import REPO_ROOT
 from src.evaluation.exploration.denominators import select_datasets, read_dataset
 from src.folder_handler import FolderHandler
 # from names_dataset import NameDataset, NameWrapper  # optional, for prepare_last_name
@@ -60,7 +61,7 @@ def prepare_train(cfg):
         df.sort_values(by='count', inplace=True, ascending=False)
         
     df.drop_duplicates(inplace=True) # why some are duplicated: because of count?
-    # df.to_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_train-mia.csv', index=False)
+    # df.to_csv(' + REPO_ROOT + '/outputs/pii_leakage/mia/ll_train-mia.csv', index=False)
     df.to_csv(output_path, index=False)
 
 def prepare_val_true(cfg):
@@ -75,7 +76,7 @@ def prepare_val_true(cfg):
     assert len(dfs['persona_path'].unique()) == 1
     df_personas_path = os.path.join(os.path.dirname(dfs['persona_path'].unique()[0]), 'val.parquet')
     print("Reading val from", df_personas_path)
-    # val_path = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_personas_v12/val.parquet"
+    # val_path = " + REPO_ROOT + "/data/processed/splits_personas_v12/val.parquet"
     df_val = pd.read_parquet(df_personas_path)
     # print(df_val)
     # exit()
@@ -101,7 +102,7 @@ def prepare_val_true(cfg):
     df.sort_values(by='value', inplace=True, ascending=True)
     # print(df)
 
-    # df.to_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_val_true-mia.csv', index=False)
+    # df.to_csv(' + REPO_ROOT + '/outputs/pii_leakage/mia/ll_val_true-mia.csv', index=False)
     df.to_csv(output_path, index=False)
 
 def merge(cfg):
@@ -118,7 +119,7 @@ def merge(cfg):
     df.drop_duplicates(inplace=True)
     df.sort_values(by='count', inplace=True, ascending=False)
     print(df)
-    # df.to_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_all-mia.csv', index=False)
+    # df.to_csv(' + REPO_ROOT + '/outputs/pii_leakage/mia/ll_all-mia.csv', index=False)
     df.to_csv(output_path, index=False)
     return output_path
 
@@ -376,8 +377,8 @@ def compute_ll(cfg, df_all_path, base=False, extra=False, batch_size=32):
 
     else:
         raise NotImplementedError("Extra not implemented")
-        df_extra = pd.read_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/probability_universe_distribution_names_extra.csv')
-        df_extra_2 = pd.read_csv('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/probability_universe_distribution_names_extra_2.csv')
+        df_extra = pd.read_csv(os.path.join(REPO_ROOT, "outputs", "pii_leakage", "probability_universe_distribution_names_extra.csv"))
+        df_extra_2 = pd.read_csv(os.path.join(REPO_ROOT, "outputs", "pii_leakage", "probability_universe_distribution_names_extra_2.csv"))
         df_extra = pd.concat([df_extra, df_extra_2])
         df_extra.drop_duplicates(inplace=True)
         df_extra = df_extra[::len(df_extra)//4000]
@@ -388,7 +389,7 @@ def compute_ll(cfg, df_all_path, base=False, extra=False, batch_size=32):
             for idx, row_all in tqdm(df_extra.iterrows(), desc='Computing LL for extra names', total=len(df_extra)):
                 ll, n_tokens, list_tokens, list_log_probs = name_logprob_given_prompt('Name: ', row_all['name'], tok=tok, model=model)
                 df_output.loc[len(df_output)] = [row['dataset_size'], row['pii_rate'], row['n_epochs'], row_all['name'], ll, n_tokens, list_tokens, list_log_probs]
-        df_output.to_csv(f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/mia/ll_all_output_{base}_extra.csv', index=False)
+        df_output.to_csv(os.path.join(REPO_ROOT, "outputs", "pii_leakage", "mia", f"ll_all_output_{base}_extra.csv"), index=False)
             
 def prepare_models(cfg):
     fh = FolderHandler()

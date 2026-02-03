@@ -5,6 +5,7 @@ import argparse
 import pandas as pd
 import os
 
+from src._repo import REPO_ROOT
 parser = argparse.ArgumentParser(description='Prep data for MIA')
 parser.add_argument('--config', type=str, default=None, help='Path to config file')
 args = parser.parse_args()
@@ -18,8 +19,8 @@ n_epochs = config['filters']['n_epochs']
 
 data_path_ft = get_src_ll_file(config)
 data_path_qi = get_src_ll_file_base(config)
-# data_path_ft = f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/ll_all_output_False_{model}_{dataset_size}_batch.csv'
-# data_path_qi = f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/ll_all_output_True_{model}_{dataset_size}_batch.csv'
+# data_path_ft = f(REPO_ROOT + '/outputs/pii_leakage/pipeline/ll_all_output_False_{model}_{dataset_size}_batch.csv'
+# data_path_qi = f(REPO_ROOT + '/outputs/pii_leakage/pipeline/ll_all_output_True_{model}_{dataset_size}_batch.csv'
 
 output_dir = get_output_dir(config)
 path_out = os.path.join(output_dir, f"df_combined_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}.csv")

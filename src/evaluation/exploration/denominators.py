@@ -7,6 +7,9 @@ import json
 from collections import Counter
 import matplotlib.pyplot as plt
 
+from src._repo import REPO_ROOT
+
+
 def _get_index_folder():
     """Index folder: env INDEX_FOLDER or repo root / index."""
     _repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -91,7 +94,7 @@ def prepare():
             results.loc[len(results)] = [row['dataset_size'], row['pii_rate'], key, ds_counter[key], len(set(values[key])), proportions[key], values_unique_ratio[key]]
         # input()
         # break
-        # dataset_path = f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/index/datasets/{dataset_index}'
+        # dataset_path = os.path.join(REPO_ROOT, "index", "datasets", dataset_index)
         # dataset_path = glob.glob(dataset_path)
         # print(dataset_path)
         # break

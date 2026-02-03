@@ -20,6 +20,7 @@ from src.folder_handler import FolderHandler
 # Reproducibility
 # ======================
 
+from src._repo import REPO_ROOT
 SEED = 42
 torch.manual_seed(SEED)
 random.seed(SEED)
@@ -180,7 +181,7 @@ def generate_ll(
             "pii_rate": 0.0,
             "model_size": "1B",
             "n_epochs": 0,
-            "model_path": "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/Llama_3.2-1B",
+            "model_path": REPO_ROOT + "/models/base/Llama_3.2-1B",
         }])
     else:
         df_models = prepare_models()
@@ -200,11 +201,9 @@ def generate_ll(
 
     for _, row in df_models.iterrows():
         row_ds = f'{row["dataset_size"]}_{row["model_size"]}_{row["pii_rate"]}_{row["n_epochs"]}'
-        output_path = (
-            f"/gpfs/commons/groups/gursoy_lab/fpollet/Git/"
-            f"clinical-exposure-metric/outputs/pii_leakage/"
-            # f"experimental-recall-all-test/"
-            f"experimental-recall-all-large/"
+        output_path = os.path.join(
+            REPO_ROOT, "outputs", "pii_leakage",
+            "experimental-recall-all-large",
             f"generation_{base}_all_{row_ds}_{k}.parquet"
         )
 
@@ -286,4 +285,4 @@ if __name__ == "__main__":
             max_new_tokens=20,
         )
 
-# CUDA_VISIBLE_DEVICES=0 python /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/src/evaluation/pipeline/experimental_recall_2.py
+# CUDA_VISIBLE_DEVICES=0 python -m src.evaluation.pipeline.experimental_recall_2

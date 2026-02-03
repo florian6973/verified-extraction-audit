@@ -1,0 +1,19 @@
+defaults:
+  - _self_
+
+base_model: "Llama_3.2-1B"
+dataset_size: 1
+n_epochs: 10
+n_samples: 1000
+lora: false
+kg: false
+pii_rate: 1.0
+n_gpu: 1
+n_cpu: 8
+no_submit: false
+# Set base_path to repo root, home_path to your home (for job logs and .bashrc)
+base_path: "."
+home_path: "~"
+backend: "vllm"
+infer_only: false
+injection_strategy: "manual"

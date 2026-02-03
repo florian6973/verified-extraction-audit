@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src._repo import REPO_ROOT
 """
 Plot TPR as a function of FPR at a given budget (like AUROC curve).
 For a list of models, varying tau values to plot the curve.
@@ -17,7 +18,7 @@ import re
 from matplotlib.lines import Line2D
 
 # Base directory containing all experimental recall outputs
-BASE_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output"
+BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
 
 
 def parse_directory_name(dir_name):

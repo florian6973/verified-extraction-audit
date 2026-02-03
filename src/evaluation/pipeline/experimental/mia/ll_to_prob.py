@@ -1,3 +1,4 @@
+from src._repo import REPO_ROOT
 """
 Convert log-likelihood (LL) columns to probability columns in a CSV file.
 Replaces LL columns with probability columns (exp(LL) normalized).
@@ -24,7 +25,7 @@ n_epochs = config['filters']['n_epochs']
 
 # Input CSV file
 input_csv = os.path.join(get_output_dir(config), f"scores_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}.csv")
-# input_csv = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3.csv"
+# input_csv = " + REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3.csv"
 
 
 def convert_ll_to_prob(df, ll_col):

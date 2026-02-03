@@ -1,0 +1,49 @@
+#!/bin/bash
+#SBATCH --job-name={job_name}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --time={duration}
+#SBATCH --output={base_path}/src/jobs/logs/{job_name}_%j.out
+#SBATCH --error={base_path}/src/jobs/logs/{job_name}_%j.err
+#SBATCH --partition=gpu  # Replace with your partition if needed
+#SBATCH --cpus-per-task={n_cpu}
+#SBATCH --gres=gpu:{n_gpu}
+#SBATCH --mem={mem}G
+
+source {home_path}/.bashrc
+conda activate clinical-exposure
+module load cuda/12.4.0
+cd {base_path}
+
+# Set environment variable to skip CUDA check.
+export DS_SKIP_CUDA_CHECK=1
+export CUDA_VISIBLE_DEVICES={cuda_visible_devices}
+
+LORA={lora}
+DS_FILE={base_path}/src/finetuning/config_ds.json
+
+
+# Automatically determine the master node's IP address using SLURM's node list.
+MASTER_ADDR=$(scontrol show hostname $SLURM_NODELIST | head -n 1)
+MASTER_PORT=29500
+
+nodes=( $( scontrol show hostnames $SLURM_JOB_NODELIST ) )
+nodes_array=($nodes)
+head_node=${nodes_array[0]}
+head_node_ip=$(srun --nodes=1 --ntasks=1 -w "$head_node" hostname --ip-address)
+
+echo "Using MASTER_ADDR: $MASTER_ADDR"
+echo "Using MASTER_IP: $head_node_ip"
+echo "Using MASTER_PORT: $MASTER_PORT"
+
+
+srun --export=ALL,DS_SKIP_CUDA_CHECK,CUDA_VISIBLE_DEVICES \
+     torchrun --nnodes=$SLURM_JOB_NUM_NODES \
+              --nproc_per_node={n_gpu} \
+              --rdzv_id={random_port} \
+              --rdzv_backend=c10d \
+              --rdzv_endpoint="${head_node_ip}:${MASTER_PORT}" \
+             src/finetuning/finetune.py \
+               --lora ${LORA} --ds_file ${DS_FILE} \
+               --model_id {model_id}
+

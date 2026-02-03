@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src._repo import REPO_ROOT
 """
 Pattern B: K-fold cross-fitting verifier + ensemble scoring for unseen names.
 
@@ -342,27 +343,15 @@ if __name__ == "__main__":
     main()
 
 """
-python /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/src/evaluation/pipeline/experimental/mia/train_mia_verifier_cv.py train \
-    --csv_path /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/pipeline-attack/df_combined_1B_10_pii_rate_1.0_n_epochs_3.csv \
-    --out_csv_path /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_1.0_n_epochs_3.csv \
-    --models_dir /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_1.0_n_epochs_3 \
-    --feature_col "ft_Name: ,ft_Patient: ,qi_Name: ,qi_Patient: " \
-    --split_col split_x \
-    --name_col value \
-    --k 5
+Example usage (set REPO_ROOT or use relative paths):
+  python -m src.evaluation.pipeline.experimental.mia.train_mia_verifier_cv train \\
+    --csv_path outputs/pii_leakage/pipeline/plots/pipeline-attack/df_combined_1B_10_pii_rate_1.0_n_epochs_3.csv \\
+    --out_csv_path outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_1.0_n_epochs_3.csv \\
+    --models_dir outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_1.0_n_epochs_3 \\
+    --feature_col "ft_Name: ,ft_Patient: ,qi_Name: ,qi_Patient: " --split_col split_x --name_col value --k 5
 
-python /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/src/evaluation/pipeline/experimental/mia/train_mia_verifier_cv.py train \
-    --csv_path /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/pipeline-attack/df_combined_1B_10_pii_rate_0.1_n_epochs_3.csv \
-    --out_csv_path /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3.csv \
-    --models_dir /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_0.1_n_epochs_3 \
-    --feature_col "ft_Name: ,ft_Patient: ,qi_Name: ,qi_Patient: " \
-    --split_col split_x \
-    --name_col value \
-    --k 5
-
-
-  python  /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/src/evaluation/pipeline/experimental/mia/train_mia_verifier_cv.py score_unseen \
-    --models_dir /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_1.0_n_epochs_3 \
-    --features_csv /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/src/evaluation/pipeline/experimental/mia/test.csv \
-    --out_csv_path /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_1.0_n_epochs_3/extracted_test.csv
+  python -m src.evaluation.pipeline.experimental.mia.train_mia_verifier_cv score_unseen \\
+    --models_dir outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_1.0_n_epochs_3 \\
+    --features_csv src/evaluation/pipeline/experimental/mia/test.csv \\
+    --out_csv_path outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_1.0_n_epochs_3/extracted_test.csv
 """

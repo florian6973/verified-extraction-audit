@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from src._repo import REPO_ROOT
 """
 Count notes and patients per split (train/val/test) from splits_filtered_v12,
 and count distinct names per PII rate in the ll_all_output CSV.
@@ -10,9 +11,9 @@ import os
 import pandas as pd
 
 
-SPLITS_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_filtered_v12"
+SPLITS_DIR = " + REPO_ROOT + "/data/processed/splits_filtered_v12"
 PII_CSV_PATH = (
-    "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/pipeline/"
+    " + REPO_ROOT + "/outputs/pii_leakage/pipeline/"
     "ll_all_output_False_1B_100_batch.csv"
 )
 

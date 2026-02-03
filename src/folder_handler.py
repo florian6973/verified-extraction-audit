@@ -88,15 +88,15 @@ class FolderHandler:
         # datasets
         datasets_df = pd.DataFrame(columns=["dataset_id", "split", "dataset_size", "pii_rate", "kg", "injection_strategy", "name_strategy", "sampling_strategy", "dataset_path", "status"])
         i = 0
-        for file in os.listdir('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_sft_with_index_v11'):
+        for file in os.listdir(os.path.join(_repo_root, "data", "processed", "splits_sft_with_index_v11")):
             parts = file.replace('.json', '').split('_')
             datasets_df.loc[len(datasets_df)] = \
-                [i, parts[0], parts[1], parts[2], parts[3], "manual", "real", "uniform", f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_sft_with_index_v11/{file}', "done"]
+                [i, parts[0], parts[1], parts[2], parts[3], "manual", "real", "uniform", f'{_repo_root}/data/processed/splits_sft_with_index_v11/{file}', "done"]
             i += 1
-        for file in os.listdir('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_sft_with_index'):
+        for file in os.listdir(os.path.join(_repo_root, "data", "processed", "splits_sft_with_index")):
             parts = file.replace('.json', '').split('_')
             datasets_df.loc[len(datasets_df)] = \
-                [i, parts[0], parts[1], parts[2], parts[3], "gemini", "real", "uniform", f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/data/processed/splits_sft_with_index/{file}', "done"]
+                [i, parts[0], parts[1], parts[2], parts[3], "gemini", "real", "uniform", f'{_repo_root}/data/processed/splits_sft_with_index/{file}', "done"]
             i += 1
         # print(datasets_df)
         datasets_df.to_csv(self.datasets_file, index=False)
@@ -104,7 +104,7 @@ class FolderHandler:
         # models
         models_df = pd.DataFrame(columns=["model_id", "model_name", "type", "model_size", "dataset_id", "n_epochs", "model_path", "src_model_path", "status"])
         i = 0
-        for file in os.listdir('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning'):
+        for file in os.listdir('{_repo_root}/outputs_models/finetuning'):
             try:
                 model_name, model_size, ds_size, pii_rate, type, suffix = self.parse_model_name(file)
 
@@ -138,21 +138,21 @@ class FolderHandler:
                     checkpoint_2 = "checkpoint-33480"
                     epoch_2 = 8
 
-                src_model_path = f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/models/base/{model_name}-{model_size}{suffix}'
+                src_model_path = f'{_repo_root}/models/base/{model_name}-{model_size}{suffix}'
 
 
-                if not os.path.exists(f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_1}'):
-                    print("Not found", f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_1}')
+                if not os.path.exists(f'{_repo_root}/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_1}'):
+                    print("Not found", f'{_repo_root}/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_1}')
                     continue
-                if not os.path.exists(f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_2}'):
-                    print("Not found", f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_2}')
+                if not os.path.exists(f'{_repo_root}/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_2}'):
+                    print("Not found", f'{_repo_root}/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_2}')
                     continue
 
                 models_df.loc[len(models_df)] = \
-                    [i, model_name, type, model_size, dataset_id, epoch_1, f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_1}', src_model_path, "done"]
+                    [i, model_name, type, model_size, dataset_id, epoch_1, f'{_repo_root}/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_1}', src_model_path, "done"]
                 i += 1
                 models_df.loc[len(models_df)] = \
-                    [i, model_name, type, model_size, dataset_id, epoch_2, f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_2}', src_model_path, "done"]
+                    [i, model_name, type, model_size, dataset_id, epoch_2, f'{_repo_root}/outputs_models/finetuning/{file}/{model_name}-{model_size}{suffix}/{checkpoint_2}', src_model_path, "done"]
                 i += 1
             except Exception as e:
                 print(e)
@@ -177,9 +177,9 @@ class FolderHandler:
                                                    "repetition_penalty",
                                                    "generated_notes_path",
                                                    "status"])
-        # /gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/finetuning
+        # {_repo_root}/outputs/finetuning
         i = 0
-        for file in os.listdir('/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/finetuning'):
+        for file in os.listdir(os.path.join(_repo_root, "outputs", "finetuning")):
             if not "vllm" in file:
                 continue
             try:
@@ -219,7 +219,7 @@ class FolderHandler:
                                                                 "type": type})
                 
                 generated_notes_df.loc[len(generated_notes_df)] = \
-                    [i, model_id, n_notes, temperature, top_p, min_p, top_k, repetition_penalty, f'/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/finetuning/{file}', "done"]
+                    [i, model_id, n_notes, temperature, top_p, min_p, top_k, repetition_penalty, f'{_repo_root}/outputs/finetuning/{file}', "done"]
                 i += 1
             except Exception as e:
                 print(e)

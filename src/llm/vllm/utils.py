@@ -4,6 +4,7 @@ import requests
 import json
 from pprint import pprint
 
+from src._repo import REPO_ROOT
 def call_vllm_server(prompt, model="Qwen3-32B-AWQ", stream=False, repetition_penalty=1.0, port=12346, task="generate_kg", note="<unspecified>",
                      temperature=None, top_p=None, 
                      top_k=None, min_p=None, max_tokens=32768, add_chat_template=True,
@@ -137,8 +138,8 @@ if __name__ == "__main__":
 
     # # load huggingface model
     # from transformers import AutoTokenizer, AutoModelForCausalLM
-    # tokenizer = AutoTokenizer.from_pretrained("/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
-    # model = AutoModelForCausalLM.from_pretrained("/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
+    # tokenizer = AutoTokenizer.from_pretrained(" + REPO_ROOT + "/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
+    # model = AutoModelForCausalLM.from_pretrained(" + REPO_ROOT + "/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
     
 
     # prompts = ['Generate', 'Generate a', 'Generate a clinical', 'Generate a clinical note']

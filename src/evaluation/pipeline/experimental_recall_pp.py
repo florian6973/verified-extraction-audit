@@ -77,11 +77,8 @@ def convert_all_parquet_files(base_dir, pattern="generation_*_all_*.parquet", ov
 
 if __name__ == "__main__":
     # Default output directory from experimental_recall_2.py
-    base_dir = (
-        "/gpfs/commons/groups/gursoy_lab/fpollet/Git/"
-        "clinical-exposure-metric/outputs/pii_leakage/"
-        "experimental-recall-all-test/"
-    )
+    from src._repo import REPO_ROOT
+    base_dir = os.path.join(REPO_ROOT, "outputs", "pii_leakage", "experimental-recall-all-test")
     
     # Convert all parquet files in the directory
     convert_all_parquet_files(base_dir, overwrite=False)

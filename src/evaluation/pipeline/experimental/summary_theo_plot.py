@@ -1,3 +1,4 @@
+from src._repo import REPO_ROOT
 """
 Create summary plots for theoretical curves.
 Plots total recall, extracted FPR, and extracted TPR as a function of budget.
@@ -24,9 +25,9 @@ except ImportError:
     HAS_SCIPY = False
 
 # Base directory containing all experimental recall outputs
-# BASE_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output"
-# BASE_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output-test"
-BASE_DIR = "/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/pii_leakage/experimental-recall-output-all-large"
+# BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
+# BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output-test"
+BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output-all-large"
 
 
 # Path to threshold_extracted_fpr0.05_results.csv

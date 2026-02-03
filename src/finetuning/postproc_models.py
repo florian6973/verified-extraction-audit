@@ -62,7 +62,7 @@ df.to_csv(df_path, index=False)
 # print(df)
 
 if False:
-    df_gen_path = '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/index/generated_notes.csv'
+    df_gen_path = os.path.join(_index, "generated_notes.csv")
     df_gen = pd.read_csv(df_gen_path).reset_index(drop=True)
 
     # look for model that have no generated notes
@@ -81,7 +81,7 @@ if False:
                 'min_p': 0.0,
                 'top_k': 50,
                 'repetition_penalty': 1.2,
-                'generated_notes_path': '/gpfs/commons/groups/gursoy_lab/fpollet/Git/clinical-exposure-metric/outputs/generation_auto/Llama_3.2-1B-1-1.0-False-vllm-10-2-20000-' + str(counter_id),
+                'generated_notes_path': os.path.join(_repo_root, "outputs", "generation_auto", "Llama_3.2-1B-1-1.0-False-vllm-10-2-20000-" + str(counter_id)),
                 'status': 'pending'
             }
             new_rows.append(new_row)

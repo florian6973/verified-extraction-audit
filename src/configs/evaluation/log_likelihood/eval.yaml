@@ -1,6 +1,6 @@
-dataset_size: 10
+dataset_size: 10 # dataset size (1, 10, 100), where 100 is the full dataset
 output_dir: ./outputs/pipeline
 model_size: 8B
 # Override base model paths if not using index/models.csv (e.g. for base/scratch runs)
-base_model_1B: null   # e.g. path/to/Llama_3.2-1B
-base_model_8B: null   # e.g. path/to/Llama_3.1-8B
+base_model_1B: null   # e.g. path/to/Llama_3.2-1B (non finetuned model)
+base_model_8B: null   # e.g. path/to/Llama_3.1-8B (non finetuned model)
