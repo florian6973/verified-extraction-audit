@@ -13,8 +13,7 @@ End-to-end flow:
 1. **MIMIC notes** → download and build train/val/test splits (script not in this repo; see below).
 2. **Data preprocessing** → generate synthetic personas, inject PII into notes (LLM or manual), sample to target PII rate → SFT JSON.
 3. **Training** → fine-tune a language model on the SFT data (index-based or direct paths).
-4. **Sampling** → generate text from the trained model (generation script not in this repo; evaluation expects certain outputs).
-5. **Evaluation & plotting** → compute extraction-risk metrics (e.g. log-likelihood of PII) and plot results.
+4. **Evaluation & plotting** → compute extraction-risk metrics (e.g. log-likelihood of PII) and plot results.
 
 ---
 
@@ -43,7 +42,7 @@ End-to-end flow:
 
 ---
 
-## Step 0: MIMIC notes and splits
+## Step 1: MIMIC notes and splits
 
 MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content/mimic-iv-note/2.2/).
 
@@ -80,7 +79,7 @@ The rest of the pipeline expects:
 
 ---
 
-## Step 1: Data preprocessing (PII insertion)
+## Step 2: Data preprocessing (PII insertion)
 
 From the repo root.
 
@@ -123,7 +122,7 @@ From the repo root.
 
 ---
 
-## Step 2: Training
+## Step 3: Training
 
 - **Base model:** Download a Hugging Face model into e.g. `models/base/`:
 
@@ -149,12 +148,6 @@ From the repo root.
 
 - **Post-processing checkpoints (optional):**  
   `src/finetuning/postproc_models.py` can add extra checkpoint rows to `index/models.csv` (e.g. different epochs). Run from repo root; it reads `INDEX_FOLDER` or `index/models.csv` by default. Edit the script’s checkpoint names/paths to match your run.
-
----
-
-## Step 3: Sampling (generation)
-
-Generating text from the trained model is **not** implemented in this export.
 
 ---
 
