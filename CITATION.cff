@@ -1,0 +1,39 @@
+cff-version: 1.2.0
+message: "If you use this repository, please cite the paper in preferred-citation."
+
+title: "Verified Extraction"
+type: software
+
+authors:
+  - family-names: Pollet
+    given-names: Florent
+  - family-names: Nikitin
+    given-names: Kirill
+  - family-names: Wang
+    given-names: Tong
+  - family-names: Gupta
+    given-names: Rahul
+  - family-names: Elhadad
+    given-names: Noémie
+  - family-names: Gursoy
+    given-names: Gamze
+
+preferred-citation:
+  type: conference-paper
+  title: "Privacy Audits for Clinical Large Language Models"
+  authors:
+    - family-names: Pollet
+      given-names: Florent
+    - family-names: Nikitin
+      given-names: Kirill
+    - family-names: Wang
+      given-names: Tong
+    - family-names: Gupta
+      given-names: Rahul
+    - family-names: Elhadad
+      given-names: Noémie
+    - family-names: Gursoy
+      given-names: Gamze
+  conference:
+    name: "Machine Learning for Healthcare Conference (MLHC)"
+  year: 2026

@@ -251,3 +251,26 @@ See `EXPORT_PLAN.md` for what was exported and which paths to override.
 
 ---
 
+## Citation
+
+Please cite the paper below when this repository contributes to your method,
+experiments, results, or implementation.
+
+```bibtex
+@inproceedings{pollet2026privacy,
+  title     = {Privacy Audits for Clinical Large Language Models},
+  author    = {Pollet, Florent and Nikitin, Kirill and Wang, Tong and
+               Gupta, Rahul and Elhadad, No\'emie and Gursoy, Gamze},
+  booktitle = {Machine Learning for Healthcare Conference (MLHC)},
+  year      = {2026}
+}
+```
+
+## License
+
+The code in this repository is licensed under the Apache License 2.0.
+See [LICENSE](LICENSE).
+
+This repository does not distribute MIMIC-IV data, trained artifacts, or any
+other restricted data. Users must obtain any required data access independently
+and comply with the applicable data-use agreements.
