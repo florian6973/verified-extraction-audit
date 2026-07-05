@@ -247,8 +247,6 @@ This gives you a first end-to-end pass: **MIMIC (or minimal splits) → preproce
 - `src/llm/` — Minimal LLM backend for PII injection (Gemini + vLLM stubs).
 - `index/` — Placeholder CSVs; replace with your datasets and models for real runs.
 
-See `EXPORT_PLAN.md` for what was exported and which paths to override.
-
 ---
 
 ## Citation
