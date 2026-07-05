@@ -77,6 +77,16 @@ The rest of the pipeline expects:
 - **Filtered notes:** Same structure with `___` where PII will be injected (e.g. `data/processed/splits_filtered_v8/`).
 - **Personas:** One parquet per split (e.g. `data/processed/splits_personas_v8/`), produced in Step 1.
 
+### Adapting to other datasets
+
+Only this step is MIMIC-specific. Everything downstream (Steps 2–4) is dataset-agnostic: it consumes the parquet layout described above, not MIMIC itself. To use another corpus of clinical (or other) notes, replace `src/dataset/splits/mimic.py` with your own splits builder — or produce the parquet files by hand — so long as the output matches this contract:
+
+- **One parquet per split**, written to `output_dir/splits/` with the split names the rest of the pipeline references (`train_1`, `val_1`, `train_10`, `val_10`, `train`, `val`, `test`). The `_1`/`_10` suffixes are just tiny/small subsamples (~1% and ~10%); keep the names even if you generate them differently.
+- **Required columns:** `text` (the note), `subject_id` (a per-individual identifier), and a note identifier. `subject_id` is what prevents patient leakage — `split_on_subject_id` in `mimic.py` splits on unique subjects so all notes for a person stay on one side. If your data has no natural subject grouping, use a unique id per note.
+- **Filtered notes and personas** follow the same per-split parquet layout (see the three bullets above). Build filtered notes by masking the spans you want treated as PII with `___`, and personas with `FakePersonas` (Step 2) — neither is MIMIC-specific.
+
+Practically, point `mimic.yaml` (or your own config) at your source files, adapt the reader (e.g. the `discharge.csv` read and any column renames) so the output DataFrame carries `text`/`subject_id`/note-id, and reuse `split_on_subject_id` and `save_df` as-is. From there, Steps 2–4 and the index CSVs work unchanged.
+
 ---
 
 ## Step 2: Data preprocessing (PII insertion)
