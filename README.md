@@ -121,7 +121,16 @@ MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content
    python src/dataset/pii_insertion/fake_persona.py    # -> splits_filtered_v* + splits_personas_v* (validate with persona_check.py)
    ```
 
-   (Alternatively run Option A's `ingest` on a `(subject_id, note)` Parquet exported from your MIMIC splits — it generates personas without needing the demographics tables. To adapt a *different* corpus, replace `src/dataset/splits/mimic.py` with your own splits builder that emits `text`/`subject_id`/`note_id` and reuse `split_on_subject_id` / `save_df`.)
+   **Quick test (recommended, e.g. 1% of the data):** skip the full persona build — MIMIC notes already carry `___`, so subsample and go straight through Option A's `ingest` (synthetic personas, no `admissions.csv`/`patients.csv` needed):
+
+   ```bash
+   python -m src.dataset.prepare.mimic_subset --discharge data/raw/discharge.csv \
+     --out data/mimic_1pct.parquet --frac 0.01
+   export DATA_ROOT=data/processed_mimic1
+   python -m src.dataset.prepare.ingest --input data/mimic_1pct.parquet --name mimic1 --out-root $DATA_ROOT
+   ```
+
+   Then continue with Steps 2–5. (To adapt a *different* corpus, replace `src/dataset/splits/mimic.py` with your own splits builder that emits `text`/`subject_id`/`note_id` and reuse `split_on_subject_id` / `save_df`.)
 
 ---
 
