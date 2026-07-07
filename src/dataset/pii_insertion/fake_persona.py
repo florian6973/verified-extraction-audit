@@ -175,96 +175,100 @@ def load_extra_info(df):
 
     return df_with_adm_patients, df_with_adm_patients_unique
 
-version = 12
-random.seed(42)
-fp = FakePersonas(seed=42)
+if __name__ == "__main__":
+    # MIMIC-specific persona build. Guarded so that `from ...fake_persona import
+    # FakePersonas` can be reused (e.g. by src.dataset.prepare.ingest) without
+    # executing this script or requiring the MIMIC splits to exist on disk.
+    version = 12
+    random.seed(42)
+    fp = FakePersonas(seed=42)
 
-# as it was built, it should be a perfect inclusion so just a patient with a male name from the smaller dataset
-intersections = set()
-for file in ['train.parquet', 'train_1.parquet', 'train_10.parquet']:
-    df_filtered, _ = load_extra_info(pd.read_parquet(f'data/processed/splits/{file}'))
-    print(df_filtered.columns)
+    # as it was built, it should be a perfect inclusion so just a patient with a male name from the smaller dataset
+    intersections = set()
+    for file in ['train.parquet', 'train_1.parquet', 'train_10.parquet']:
+        df_filtered, _ = load_extra_info(pd.read_parquet(f'data/processed/splits/{file}'))
+        print(df_filtered.columns)
 
-    subject_ids_male = df_filtered[df_filtered['gender'] == 'M']['subject_id'].tolist()
-    if len(intersections) == 0:
-        intersections = set(subject_ids_male)
-    else:
-        intersections = intersections.intersection(set(subject_ids_male))
-print(len(intersections))
+        subject_ids_male = df_filtered[df_filtered['gender'] == 'M']['subject_id'].tolist()
+        if len(intersections) == 0:
+            intersections = set(subject_ids_male)
+        else:
+            intersections = intersections.intersection(set(subject_ids_male))
+    print(len(intersections))
 
-subject_common_id = random.choice(list(intersections))
-print("Selected subject_common_id", subject_common_id)
+    subject_common_id = random.choice(list(intersections))
+    print("Selected subject_common_id", subject_common_id)
 
-for file in ['train.parquet', 'val.parquet', 'test.parquet']:
-    logger.info(f"Processing {file}")
+    for file in ['train.parquet', 'val.parquet', 'test.parquet']:
+        logger.info(f"Processing {file}")
 
-    if os.path.exists(f'data/processed/splits_personas_v{version}/{file}'):
-        logger.info(f"Skipping {file} because it already exists")
-        continue
+        if os.path.exists(f'data/processed/splits_personas_v{version}/{file}'):
+            logger.info(f"Skipping {file} because it already exists")
+            continue
 
-    path = f'data/processed/splits/{file}'
-    df = pd.read_parquet(path)
-    logger.debug(f"Loaded {len(df)} rows from {file}")
-    df_with_adm_patients, df_with_adm_patients_unique = load_extra_info(df)
-    # build_df.to_csv('build_df.csv', index=False)
+        path = f'data/processed/splits/{file}'
+        df = pd.read_parquet(path)
+        logger.debug(f"Loaded {len(df)} rows from {file}")
+        df_with_adm_patients, df_with_adm_patients_unique = load_extra_info(df)
+        # build_df.to_csv('build_df.csv', index=False)
 
-    faker_columns = ['anchor_age', 'gender', 'language', 'race', 'subject_id']
+        faker_columns = ['anchor_age', 'gender', 'language', 'race', 'subject_id']
 
-    # how many patients for 2000 providers <-> 220000 patients 
-    fp.create_physicians(int(2000/220000*len(df_with_adm_patients_unique)))
-    personas_df = fp.generate_personas(df_with_adm_patients_unique, subject_common_id)
-    df_with_adm_patients.drop(columns=['race', 'language'], inplace=True)
-    # personas_df.to_csv('personas.csv', index=False)
+        # how many patients for 2000 providers <-> 220000 patients 
+        fp.create_physicians(int(2000/220000*len(df_with_adm_patients_unique)))
+        personas_df = fp.generate_personas(df_with_adm_patients_unique, subject_common_id)
+        df_with_adm_patients.drop(columns=['race', 'language'], inplace=True)
+        # personas_df.to_csv('personas.csv', index=False)
 
-    # join with build_df
-    df_all = df_with_adm_patients.join(personas_df.set_index('subject_id'), on='subject_id', how='inner')
-    logger.debug(f"Joined with personas, {len(df_all)} rows")
+        # join with build_df
+        df_all = df_with_adm_patients.join(personas_df.set_index('subject_id'), on='subject_id', how='inner')
+        logger.debug(f"Joined with personas, {len(df_all)} rows")
 
-    # filter rows in original split with text
-    df_filtered = df[df['note_id'].isin(df_all['note_id'])]
-    df_filtered.reset_index(drop=True, inplace=True)
-    os.makedirs(f'data/processed/splits_filtered_v{version}', exist_ok=True)
-    df_filtered.to_parquet(f'data/processed/splits_filtered_v{version}/{file}')
-    logger.info(f"Saved to data/processed/splits_filtered_v{version}/{file}")
+        # filter rows in original split with text
+        df_filtered = df[df['note_id'].isin(df_all['note_id'])]
+        df_filtered.reset_index(drop=True, inplace=True)
+        os.makedirs(f'data/processed/splits_filtered_v{version}', exist_ok=True)
+        df_filtered.to_parquet(f'data/processed/splits_filtered_v{version}/{file}')
+        logger.info(f"Saved to data/processed/splits_filtered_v{version}/{file}")
     
-    os.makedirs(f'data/processed/splits_personas_v{version}', exist_ok=True)
-    df_all.to_parquet(f'data/processed/splits_personas_v{version}/{file}')
-    logger.info(f"Saved to data/processed/splits_personas_v{version}/{file}")
+        os.makedirs(f'data/processed/splits_personas_v{version}', exist_ok=True)
+        df_all.to_parquet(f'data/processed/splits_personas_v{version}/{file}')
+        logger.info(f"Saved to data/processed/splits_personas_v{version}/{file}")
     
-for file in ['train_1.parquet', 'val_1.parquet', 'train_10.parquet', 'val_10.parquet']:
-    # if os.path.exists(f'data/processed/splits_personas_v{version}/{file}'):
-    #     logger.info(f"Skipping {file} because it already exists")
-    #     continue
-    print(file)
-    df = pd.read_parquet(f'data/processed/splits/{file}')
-    if "train" in file:
-        df_persona = pd.read_parquet(f'data/processed/splits_personas_v{version}/train.parquet')
-        df_filtered = pd.read_parquet(f'data/processed/splits_filtered_v{version}/train.parquet')
-    else:
-        df_persona = pd.read_parquet(f'data/processed/splits_personas_v{version}/val.parquet')
-        df_filtered = pd.read_parquet(f'data/processed/splits_filtered_v{version}/val.parquet')
+    for file in ['train_1.parquet', 'val_1.parquet', 'train_10.parquet', 'val_10.parquet']:
+        # if os.path.exists(f'data/processed/splits_personas_v{version}/{file}'):
+        #     logger.info(f"Skipping {file} because it already exists")
+        #     continue
+        print(file)
+        df = pd.read_parquet(f'data/processed/splits/{file}')
+        if "train" in file:
+            df_persona = pd.read_parquet(f'data/processed/splits_personas_v{version}/train.parquet')
+            df_filtered = pd.read_parquet(f'data/processed/splits_filtered_v{version}/train.parquet')
+        else:
+            df_persona = pd.read_parquet(f'data/processed/splits_personas_v{version}/val.parquet')
+            df_filtered = pd.read_parquet(f'data/processed/splits_filtered_v{version}/val.parquet')
     
-    # df_persona = df_persona.join(df.set_index('note_id'), on='note_id', how='inner')
-    df_persona_filtered = df_persona[df_persona['note_id'].isin(df['note_id'])]
-    # df_persona_filtered.set_index('note_id', inplace=True)
-    print(df_persona_filtered.shape, df.shape)
-    df_filtered = df[df['note_id'].isin(df_persona_filtered['note_id'])]
-    # reorder in same order as df using note_id
-    note_ids_order = df_filtered['note_id'].tolist()
-    df_persona_filtered.set_index('note_id', inplace=True)
-    df_persona_filtered = df_persona_filtered.loc[note_ids_order]
-    df_persona_filtered.reset_index(inplace=True)
-    df_filtered.reset_index(inplace=True, drop=True)
+        # df_persona = df_persona.join(df.set_index('note_id'), on='note_id', how='inner')
+        df_persona_filtered = df_persona[df_persona['note_id'].isin(df['note_id'])]
+        # df_persona_filtered.set_index('note_id', inplace=True)
+        print(df_persona_filtered.shape, df.shape)
+        df_filtered = df[df['note_id'].isin(df_persona_filtered['note_id'])]
+        # reorder in same order as df using note_id
+        note_ids_order = df_filtered['note_id'].tolist()
+        df_persona_filtered.set_index('note_id', inplace=True)
+        df_persona_filtered = df_persona_filtered.loc[note_ids_order]
+        df_persona_filtered.reset_index(inplace=True)
+        df_filtered.reset_index(inplace=True, drop=True)
 
-    df_persona_filtered.to_parquet(f'data/processed/splits_personas_v{version}/{file}')
-    logger.info(f"Saved to data/processed/splits_personas_v{version}/{file}")
-    df_filtered.to_parquet(f'data/processed/splits_filtered_v{version}/{file}')
-    logger.info(f"Saved to data/processed/splits_filtered_v{version}/{file}")
+        df_persona_filtered.to_parquet(f'data/processed/splits_personas_v{version}/{file}')
+        logger.info(f"Saved to data/processed/splits_personas_v{version}/{file}")
+        df_filtered.to_parquet(f'data/processed/splits_filtered_v{version}/{file}')
+        logger.info(f"Saved to data/processed/splits_filtered_v{version}/{file}")
     
 
-# for file in ['train_1.parquet', 'val_1.parquet', 'train_10.parquet', 'val_10.parquet']:
-#     print(file)
-#     df = pd.read_parquet(f'data/processed/splits_filtered_v{version}/{file}')
-#     df_persona = pd.read_parquet(f'data/processed/splits_personas_v{version}/{file}')
-#     print(df_persona)
-#     print(df)
+    # for file in ['train_1.parquet', 'val_1.parquet', 'train_10.parquet', 'val_10.parquet']:
+    #     print(file)
+    #     df = pd.read_parquet(f'data/processed/splits_filtered_v{version}/{file}')
+    #     df_persona = pd.read_parquet(f'data/processed/splits_personas_v{version}/{file}')
+    #     print(df_persona)
+    #     print(df)

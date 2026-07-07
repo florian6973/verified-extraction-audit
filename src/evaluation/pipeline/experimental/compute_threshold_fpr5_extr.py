@@ -409,7 +409,7 @@ def main():
     parser.add_argument(
         "--base-dir",
         type=str,
-        default=" + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output",
+        default=os.path.join(REPO_ROOT, "outputs", "pii_leakage", "experimental-recall-output"),
         help="Base directory containing experimental-recall-output subdirectories"
     )
     parser.add_argument(

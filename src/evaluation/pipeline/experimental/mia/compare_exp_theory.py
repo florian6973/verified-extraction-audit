@@ -1,6 +1,6 @@
 """
 Compare experimental and theoretical results for TPR, FPR, and Recall as a function of tau.
-Reads outputs from evaluate_scores.py and pipeline-attack-5.py.
+Reads outputs from evaluate_scores.py and attack_curves.py.
 """
 
 import argparse
@@ -56,7 +56,7 @@ elif os.path.exists(exp_csv_filtered_base):
 else:
     exp_csv_filtered = None
     print(f"Experimental results (train/val only) not found")
-# Theoretical results from pipeline-attack-5.py
+# Theoretical results from attack_curves.py
 # Need to find the theoretical curves CSV - it's saved with tau in the filename
 # We'll need to read multiple tau files or find a way to get all tau values
 plots_dir = os.path.join(output_dir, "plots_theory")

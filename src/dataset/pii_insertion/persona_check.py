@@ -62,7 +62,7 @@ def check_persona(path_1, path_2, split_version):
 
     print("\nIntersection Counts Summary:")
     print(intersection_counts)
-    intersection_counts.to_csv(f" + REPO_ROOT + "/outputs/splits/intersection_counts_{split_version}.csv")
+    intersection_counts.to_csv(f"{REPO_ROOT}/outputs/splits/intersection_counts_{split_version}.csv")
     return ok, intersection_counts
 
 # problem with seed initialization
@@ -114,7 +114,7 @@ def plot_name_distribution(path, title):
     plt.setp(ax2.xaxis.get_majorticklabels(), rotation=45, ha='right')
     
     plt.tight_layout()
-    plt.savefig(f(REPO_ROOT + '/outputs/splits/name_distribution_{title}.png')
+    plt.savefig(f"{REPO_ROOT}/outputs/splits/name_distribution_{title}.png")
     plt.close()
 
 def check_random_names(path):
@@ -172,7 +172,7 @@ def plot_name_duplication_distribution(path, title):
              bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
     
     plt.tight_layout()
-    plt.savefig(f(REPO_ROOT + '/outputs/splits/name_duplication_distribution_{title}.png')
+    plt.savefig(f"{REPO_ROOT}/outputs/splits/name_duplication_distribution_{title}.png")
     plt.close()
 
 if __name__ == "__main__":
@@ -182,13 +182,13 @@ if __name__ == "__main__":
     # for version in [1, version_new]:
 
     for suffix in ["", "_10", "_1"]:
-        path = f" + REPO_ROOT + "/data/processed/splits_personas_v{version_new}/train{suffix}.parquet"
+        path = f"{REPO_ROOT}/data/processed/splits_personas_v{version_new}/train{suffix}.parquet"
         check_random_names(path)
     exit()
 
     for version in [version_new]:
-        path_1 = f" + REPO_ROOT + "/data/processed/splits_personas_v{version}/train.parquet"
-        path_2 = f" + REPO_ROOT + "/data/processed/splits_personas_v{version}/val.parquet"
+        path_1 = f"{REPO_ROOT}/data/processed/splits_personas_v{version}/train.parquet"
+        path_2 = f"{REPO_ROOT}/data/processed/splits_personas_v{version}/val.parquet"
         print(check_persona(path_1, path_2, "v" + str(version)))
         
         # Plot name distributions for both paths
@@ -200,9 +200,9 @@ if __name__ == "__main__":
         plot_name_duplication_distribution(path_2, f"val_v{version}")
 
     # load the intersection counts for the two versions
-    intersection_counts_v1 = pd.read_csv(f" + REPO_ROOT + "/outputs/splits/intersection_counts_v1.csv")
+    intersection_counts_v1 = pd.read_csv(f"{REPO_ROOT}/outputs/splits/intersection_counts_v1.csv")
     intersection_counts_v1 = intersection_counts_v1.set_index('column_name')
-    intersection_counts_v2 = pd.read_csv(f" + REPO_ROOT + "/outputs/splits/intersection_counts_v{version_new}.csv")
+    intersection_counts_v2 = pd.read_csv(f"{REPO_ROOT}/outputs/splits/intersection_counts_v{version_new}.csv")
     intersection_counts_v2 = intersection_counts_v2.set_index('column_name')
     # compute  ratio between intersection counts of v1 and v2
     ratio = intersection_counts_v1['intersection_count'] / intersection_counts_v2['intersection_count']

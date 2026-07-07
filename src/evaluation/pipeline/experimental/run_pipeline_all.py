@@ -114,9 +114,9 @@ def run_pipeline_for_config(config_path: str, script_dir: str, plotting_only: bo
     Returns:
         True if all steps succeeded, False otherwise
     """
-    # pipeline-attack-5.py is one level up from experimental directory
+    # attack_curves.py is one level up from experimental directory
     pipeline_dir = os.path.dirname(script_dir)
-    pipeline_attack_script = os.path.join(pipeline_dir, 'pipeline-attack-5.py')
+    pipeline_attack_script = os.path.join(pipeline_dir, 'attack_curves.py')
     
     commands = [
         # Step 1: Check names
@@ -157,15 +157,15 @@ def run_pipeline_for_config(config_path: str, script_dir: str, plotting_only: bo
         
         # Step 10: Theoretical evaluation (tau 0.3)
         (['python', pipeline_attack_script, '--config', config_path, '--tau', '0.3'],
-         'Step 10: Running pipeline-attack-5.py (Theoretical, tau=0.3)'),
+         'Step 10: Running attack_curves.py (Theoretical, tau=0.3)'),
         
         # Step 11: Theoretical evaluation (tau 0.5)
         (['python', pipeline_attack_script, '--config', config_path, '--tau', '0.5'],
-         'Step 11: Running pipeline-attack-5.py (Theoretical, tau=0.5)'),
+         'Step 11: Running attack_curves.py (Theoretical, tau=0.5)'),
         
         # Step 12: Theoretical evaluation (tau 0.7)
         (['python', pipeline_attack_script, '--config', config_path, '--tau', '0.7'],
-         'Step 12: Running pipeline-attack-5.py (Theoretical, tau=0.7)'),
+         'Step 12: Running attack_curves.py (Theoretical, tau=0.7)'),
         
         # Step 12.1: Bootstrap without filtering
         (['python', os.path.join(script_dir, 'mia', 'bootstrap_metrics.py'), '--config', config_path, '--n-bootstrap', '100'],
@@ -205,7 +205,7 @@ def main():
     parser.add_argument(
         '--template-config',
         type=str,
-        default=(REPO_ROOT + '/src/evaluation/pipeline/experimental/config-1B-10-1.0-3_updated.yaml',
+        default=(REPO_ROOT + '/src/evaluation/pipeline/experimental/config-1B-10-1.0-3_updated.yaml'),
         help='Path to template config file'
     )
     parser.add_argument(

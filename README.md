@@ -1,6 +1,6 @@
 # Verified Extraction Audit
 
-Code for the verified extraction audit pipeline: **data preprocessing** (PII insertion into clinical notes), **model training** (supervised fine-tuning), and **evaluation** (extraction risk metrics and plotting).
+Code for the verified extraction audit pipeline: **data preparation** (direct-identifier insertion into clinical notes), **model training** (supervised fine-tuning), and **evaluation** (verified extraction-risk metrics).
 
 This repository is an anonymized, self-contained export of the components used for the paper. It does not include MIMIC-IV data, base model weights, or job submission scripts; you provide those locally.
 
@@ -8,254 +8,247 @@ This repository is an anonymized, self-contained export of the components used f
 
 ## Overview
 
-End-to-end flow:
+One linear pipeline. **Step 1 produces the input files** — from your own corpus *or* from MIMIC — and **Steps 2–5 are identical either way**:
 
-1. **MIMIC notes** → download and build train/val/test splits (script not in this repo; see below).
-2. **Data preprocessing** → generate synthetic personas, inject PII into notes (LLM or manual), sample to target PII rate → SFT JSON.
-3. **Training** → fine-tune a language model on the SFT data (index-based or direct paths).
-4. **Evaluation & plotting** → compute extraction-risk metrics (e.g. log-likelihood of PII) and plot results.
+1. **Prepare data** → get your notes into a `(subject_id, note)` Parquet with `___` blanks, then `ingest` → internal splits + synthetic personas.
+2. **Inject** → fill the blanks with synthetic direct identifiers (offline or LLM) and sample to the target rate → SFT dataset.
+3. **Train** → fine-tune a language model on the SFT data.
+4. **Generate** → sample attacker-query *completions* from the fine-tuned model.
+5. **Audit** → train the verification classifier and report the theoretical + experimental extraction curves.
 
 ---
 
 ## Setup
 
 - **Python:** 3.8+
-- **Install:** From the repo root (e.g. `verified-extraction-audit/`):
+- **Install:** From the repo root:
 
   ```bash
   cd verified-extraction-audit
-  pip install -e .
+  pip install -e .          # or: export PYTHONPATH=/path/to/verified-extraction-audit
   ```
 
-  Or run scripts with `PYTHONPATH` set to the repo root:
+- **Configuration is minimal.** The new-dataset path (Steps 1–5) is driven entirely by
+  command-line flags plus one optional env var — no Hydra configs, no `index/` registry:
+  - `DATA_ROOT` — root for the internal `splits_filtered_v*` / `splits_personas_v*` layout (default: `data/processed`).
 
-  ```bash
-  export PYTHONPATH=/path/to/verified-extraction-audit
-  ```
-
-- **Paths:** Default paths are relative to the repo root. Override with env vars when needed:
-  - `INDEX_FOLDER` — index directory (default: `./index`).
-  - `PII_INSERTION_OUTPUTS` — base directory for PII insertion outputs.
-  - `OUTPUT_DIR` — base directory for evaluation outputs (e.g. denominators, plots).
-  - `GEMINI_USAGE_LOG` — path for Gemini API usage log (if using Gemini).
-  - `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` — for Gemini/Vertex (no defaults in repo).
+  The rest are used **only** by the MIMIC / paper path (the Hydra configs under `src/configs/` and
+  the `index/` registry) or by LLM injection — never by the new-dataset path:
+  - `INDEX_FOLDER` — training registry directory (default: `./index`); `OUTPUT_DIR`, `PII_INSERTION_OUTPUTS` — legacy evaluation / injection output dirs.
+  - `GEMINI_USAGE_LOG`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` — only for LLM-based injection (Step 2 `--classifier llm`).
 
 ---
 
-## Step 1: MIMIC notes and splits
+## Quick start: the smoke test
+
+To see the whole pipeline run end-to-end on **fully synthetic data** — no MIMIC, no API keys, no base-model download (it builds a tiny Llama) — on one GPU:
+
+```bash
+sbatch src/jobs/smoke/smoke_test.slurm      # SLURM cluster
+bash   src/jobs/smoke/run_smoke.sh          # or any GPU box (CPU works, slowly)
+SCENARIO=2 bash src/jobs/smoke/run_smoke.sh  # scenario 2 (identifiers already in the notes)
+```
+
+It runs every step below and writes the leakage report to `outputs/smoke/audit/audit_report.json`. Edit the `SBATCH` directives and the `CONDA_ENV` / `CUDA_MODULE` variables at the top of the `.slurm` file to match your cluster. Training uses bf16, so request an **Ampere-or-newer GPU** (A100/H100/L4/RTX 30+); on mixed-hardware clusters pin it with `#SBATCH --constraint=...`.
+
+---
+
+## Input format
+
+The pipeline consumes **at most two small Parquet files** — nothing MIMIC-specific:
+
+1. **Dataset** — one row per note, columns `subject_id` and `note`; removed direct-identifier spans marked `___`:
+
+   ```text
+   subject_id,note
+   1,"Patient ___ is a 48yo with chest pain"
+   2,"John Doe has visited the ED on May 2, 2026"
+   3,"Mr. ___ with blurred vision met the doctor Jane Smith"
+   ```
+
+2. **Labeled data** *(scenario 2 only)* — a handful of direct identifiers labeled member/non-member (`1` = member of the fine-tuning set, `0` = non-member), used to train the verification classifier:
+
+   ```text
+   entry,label
+   "John Doe",1
+   "Jane Doe",0
+   ```
+
+`subject_id` keeps all of a subject's notes on one side of the train/val split (use a unique id per note if there is no natural grouping). A ready-made synthetic example of both files is in [`examples/synthetic/`](examples/synthetic/) (`notes.parquet`, `labeled.parquet`, plus `.csv` previews).
+
+**Two scenarios:**
+
+- **Scenario 1 — synthetic or "perfectly" de-identified data.** Inject synthetic direct identifiers into the `___` blanks, fine-tune, and measure how much the model memorizes and leaks (as in the paper). No labeled file needed — Step 2 emits one for you.
+- **Scenario 2 — a real, imperfectly de-identified corpus to audit.** Manually review a few notes (or run a de-identification tool) to find a handful of residual identifiers, build the small labeled file above, and estimate the actual leakage.
+
+---
+
+## Step 1 — Prepare your data
+
+Turn your notes into the internal per-split layout the rest of the pipeline reads, under `$DATA_ROOT` (env var, default `data/processed`): `$DATA_ROOT/splits_filtered_v8/<split>.parquet` (note `text` with `___` blanks) plus a `splits_personas_v8/<split>.parquet` matched to it **by `note_id`** (the synthetic identifiers). Produce it **either** way — both converge on the same layout, so Steps 2–5 are unchanged.
+
+### Option A — your own dataset (dataset-agnostic)
+
+From a `(subject_id, note)` Parquet (see [Input format](#input-format)):
+
+```bash
+export DATA_ROOT=data/processed          # where the internal splits live (default; used by Steps 1–3)
+
+# optional: generate a synthetic (subject_id, note) file to try things out
+python -m src.dataset.prepare.make_synthetic --out data/notes.parquet --n-subjects 60
+
+python -m src.dataset.prepare.ingest --input data/notes.parquet --name mydata \
+  --out-root $DATA_ROOT --version 8 --val-frac 0.5
+```
+
+`ingest` splits on `subject_id` and generates the synthetic personas — no demographics required.
+
+### Option B — MIMIC-IV (the paper's setup)
 
 MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content/mimic-iv-note/2.2/).
 
-**What you need to do:**
-
-1. Download from [MIMIC-IV Note](https://physionet.org/content/mimic-iv-note/2.2/note):
-   - `discharge.csv` (and any other note tables you use).
-2. Optionally from [MIMIC-IV](https://physionet.org/content/mimiciv/3.1/): `admissions.csv`, `patients.csv`.
-3. Place them under `data/raw/` (or your chosen `data_dir`).
-4. **Build splits** using the included script (Hydra config: `src/configs/dataset/mimic.yaml`; default `data_dir: data/raw`, `output_dir: data/processed`):
+1. Download `discharge.csv` (and optionally `admissions.csv`, `patients.csv`) to `data/raw/`.
+2. Build splits (Hydra config `src/configs/dataset/mimic.yaml`):
 
    ```bash
-   python -m src.dataset.splits.mimic
+   python -m src.dataset.splits.mimic          # writes data/processed/splits/{train,val,test,train_1,val_1,...}.parquet
    ```
 
-   Override paths via Hydra, e.g.:
+   Each split has `text`, `subject_id`, and a `note_id`. *(Optional stats table: `python -m src.dataset.splits.stats_to_latex --splits_dir data/processed/splits --output outputs/splits/stats_table.tex`.)*
+3. Build the filtered notes + synthetic personas. MIMIC-IV discharge notes already contain `___` where identifiers were removed, so this step masks nothing — it writes `splits_filtered_v<V>/` (the `___` notes) and a `note_id`-matched `splits_personas_v<V>/`:
 
    ```bash
-   python -m src.dataset.splits.mimic data_dir=data/raw output_dir=data/processed
+   python src/dataset/pii_insertion/fake_persona.py    # -> splits_filtered_v* + splits_personas_v* (validate with persona_check.py)
    ```
 
-   This writes parquet files under `output_dir/splits/` (e.g. `train_1`, `val_1`, `train_10`, `val_10`, `train`, `val`, `test`). You still need to **filter/mask** note text so that PII slots are `___` (e.g. `data/processed/splits_filtered_v8/`) and build **personas** (Step 1).
-
-5. **Optional:** compute split statistics for papers:
-
-   ```bash
-   python -m src.dataset.splits.stats_to_latex --splits_dir data/processed/splits --output outputs/splits/stats_table.tex
-   ```
-
-The rest of the pipeline expects:
-- **Splits:** Parquet files per split with at least `text`, `subject_id`, and note identifiers.
-- **Filtered notes:** Same structure with `___` where PII will be injected (e.g. `data/processed/splits_filtered_v8/`).
-- **Personas:** One parquet per split (e.g. `data/processed/splits_personas_v8/`), produced in Step 1.
-
-### Adapting to other datasets
-
-Only this step is MIMIC-specific. Everything downstream (Steps 2–4) is dataset-agnostic: it consumes the parquet layout described above, not MIMIC itself. To use another corpus of clinical (or other) notes, replace `src/dataset/splits/mimic.py` with your own splits builder — or produce the parquet files by hand — so long as the output matches this contract:
-
-- **One parquet per split**, written to `output_dir/splits/` with the split names the rest of the pipeline references (`train_1`, `val_1`, `train_10`, `val_10`, `train`, `val`, `test`). The `_1`/`_10` suffixes are just tiny/small subsamples (~1% and ~10%); keep the names even if you generate them differently.
-- **Required columns:** `text` (the note), `subject_id` (a per-individual identifier), and a note identifier. `subject_id` is what prevents patient leakage — `split_on_subject_id` in `mimic.py` splits on unique subjects so all notes for a person stay on one side. If your data has no natural subject grouping, use a unique id per note.
-- **Filtered notes and personas** follow the same per-split parquet layout (see the three bullets above). Build filtered notes by masking the spans you want treated as PII with `___`, and personas with `FakePersonas` (Step 2) — neither is MIMIC-specific.
-
-Practically, point `mimic.yaml` (or your own config) at your source files, adapt the reader (e.g. the `discharge.csv` read and any column renames) so the output DataFrame carries `text`/`subject_id`/note-id, and reuse `split_on_subject_id` and `save_df` as-is. From there, Steps 2–4 and the index CSVs work unchanged.
+   (Alternatively run Option A's `ingest` on a `(subject_id, note)` Parquet exported from your MIMIC splits — it generates personas without needing the demographics tables. To adapt a *different* corpus, replace `src/dataset/splits/mimic.py` with your own splits builder that emits `text`/`subject_id`/`note_id` and reuse `split_on_subject_id` / `save_df`.)
 
 ---
 
-## Step 2: Data preprocessing (PII insertion)
+## Step 2 — Inject direct identifiers
 
-From the repo root.
+`inject` does the whole job in one step: for each note it **classifies** every `___` blank into a direct-identifier category, **fills** it with the matching field of the note's persona (matched **by `note_id`**, never by row order), and **samples** at the direct-identifier rate `--di-rate` — writing the SFT dataset plus the scenario-2 labeled set. Classification comes from either the note label or a single LLM call:
 
-1. **Generate synthetic personas** (e.g. patient/physician names and other PII):
+- **Offline / deterministic** — classify by the note label (`Name:`, `MRN:`, …); no LLM. Used by the smoke test:
 
-   The `FakePersonas` class in `src/dataset/pii_insertion/fake_persona.py` is used to generate the synthetic PII. 
+  ```bash
+  python -m src.dataset.prepare.inject --splits-root $DATA_ROOT --version 8 \
+    --classifier label --di-type name --di-rate 0.05 \
+    --output-sft $DATA_ROOT/sft --emit-labeled data/labeled.parquet
+  ```
 
-2. **PII injection** (fill `___` with synthetic PII using an LLM or manual mapping):
+- **LLM** — one call per note asks the model to classify every blank at once; the persona then fills them (`--api gemini|vllm`, or `mock` for an offline dry run). Set the Google Cloud / Gemini env vars first:
 
-   - **LLM-based** (e.g. Gemini):
+  ```bash
+  python -m src.dataset.prepare.inject --splits-root $DATA_ROOT --version 8 \
+    --classifier llm --api gemini --model gemini-2.5-flash-preview-05-20 \
+    --di-type name --di-rate 0.05 --output-sft $DATA_ROOT/sft --emit-labeled data/labeled.parquet
+  ```
 
-     ```bash
-     # Set Google Cloud / Gemini env vars first
-     python -m src.dataset.pii_insertion.pii_injection \
-       --api gemini --model gemini-2.5-flash-preview-05-20 \
-       --files val_1 train_1 --num-workers 4
-     ```
+**Direct-identifier rate.** `--di-rate` is the fraction of direct-identifier blanks that keep an identifier (`0.05` = 5%; the rest stay `___`) — the paper's "DI rate", and what replaces the old `pii_rate`/index column. It is baked into the SFT filename `<split>_<rate>.json`, so you can build several rates side by side and train/audit each independently:
 
-     Outputs go under `outputs/pii_insertion/direct/<model>_v8/<split>/` (tags, JSON, etc.). Paths assume personas at `data/processed/splits_personas_v8/<split>.parquet` and texts at `data/processed/splits_filtered_v8/<split>.parquet`; adjust in the script if your layout differs.
+  ```bash
+  for R in 0.01 0.05 0.1 1.0; do
+    python -m src.dataset.prepare.inject --splits-root $DATA_ROOT --classifier label \
+      --di-type name --di-rate $R --output-sft $DATA_ROOT/sft --emit-labeled data/labeled_$R.parquet
+    python src/finetuning/finetune.py --model_name_or_path models/base/Llama_3.2-1B \
+      --dataset_path $DATA_ROOT/sft/train_$R.json --output_dir outputs/mydata/ft_$R --n_epochs 3
+  done
+  ```
 
-     This step is necessary to determine the semantic tags of each blank.
-
-   - **Manual insertion:** use `manual_insertion.py` with your paths (see script and `src/dataset/pii_insertion/README.md`).
-
-3. **Sampling** (target PII rate and build SFT JSON):
-
-   ```bash
-   python -m src.dataset.pii_insertion.sampling \
-     --splits_raw_path data/processed/splits_filtered_v8 \
-     --splits_base_path outputs/pii_insertion/direct \
-     --output_path data/processed/splits_sft_with_index \
-     --model gemini-2.5-flash-preview-05-20_v8 \
-     --proportion_pii 0.05
-   ```
-
-   Or use `sampling_manual.py` for manual-insertion data. This produces JSON files such as `data/processed/splits_sft_with_index/train_1_0.05_no-kg.json` (path pattern may vary). Those are the **SFT datasets** used for training.
-
-4. **Validation (optional):**  
-   - `persona_check.py` — check persona vs. note alignment and duplicates.  
+This writes `$DATA_ROOT/sft/{train,val}_0.05.json` (the **SFT datasets** for training) and `members_<split>.csv`. Both classifiers fill from the same personas by `note_id`, so results are independent of parquet row order or `os.listdir`.
 
 ---
 
-## Step 3: Training
+## Step 3 — Train
 
-- **Base model:** Download a Hugging Face model into e.g. `models/base/`:
+Download a base model and fine-tune directly on the SFT data — **no index, no config files**:
 
-  ```bash
-  huggingface-cli download meta-llama/Llama-3.2-1B-Instruct --local-dir models/base/Llama_3.2-1B
-  ```
+```bash
+huggingface-cli download meta-llama/Llama-3.2-1B-Instruct --local-dir models/base/Llama_3.2-1B
 
-- **Index:** Training in this repo is driven by `index/` (see `EXPORT_PLAN.md`). You need:
-  - `index/datasets.csv` — one row per dataset (columns at least: `dataset_id`, `dataset_size`, `pii_rate`, `kg`, `injection_strategy`, `name_strategy`, `sampling_strategy`, `dataset_path`, `status`, `persona_path`, `person_path_name`).
-  - `index/models.csv` — one row per (base model, dataset, checkpoint) you want to train (columns at least: `model_id`, `model_name`, `type`, `model_size`, `dataset_id`, `n_epochs`, `model_path`, `src_model_path`, `status`).
+python src/finetuning/finetune.py \
+  --model_name_or_path models/base/Llama_3.2-1B \
+  --dataset_path $DATA_ROOT/sft/train_0.05.json \
+  --output_dir outputs/mydata/finetuned --n_epochs 3    # logs to W&B; run `wandb login` first
+```
 
-  Point `dataset_path` to your SFT JSON (e.g. `data/processed/splits_sft_with_index/train_1_0.05_no-kg.json`) and `model_path` / `src_model_path` to your output dir and base model.
+`finetune.py` derives the val SFT path from `--dataset_path` (`train`→`val`); launch it **by file path** (not `-m`). For multi-GPU / DeepSpeed use the same entry point with your launcher.
 
-- **Job config (reference):** A sample finetuning job config is in `src/configs/jobs/submit_finetuning_job_1b_large.yaml` (base model, dataset size, epochs, PII rate, etc.). Set `base_path` and `home_path` to your repo root and home; use it with your own job launcher if you have one.
+**Choosing the model & hyperparameters:**
 
-- **Run training** (single GPU, using `model_id` from the index):
+- **Base model** — `--model_name_or_path` takes any Hugging Face causal-LM directory, so to change from Llama just download another model (Qwen, OLMo, a bigger Llama, …) and point at it. Use the **same** base for the audit's `--base-model` (the non-fine-tuned reference). For **multi-GPU FSDP**, the model directory name must contain a family key (`Llama`, `Qwen`, `Olmo`) so `finetune.py`'s `decoding_layers` picks the right decoder layer — add your `<Family>DecoderLayer` there for other architectures (single-GPU training doesn't need it).
+- **Training hyperparameters are not in any config file.** The core ones — learning rate `2e-5`, per-device batch size `1`, gradient accumulation `8`, cosine schedule, `bf16` — are set directly in `finetune.py`'s `TrainingArguments`; edit them there. The CLI exposes `--n_epochs`, `--output_dir`, `--model_max_length`, `--lora`, `--save_total_limit`.
 
-  ```bash
-  DS_SKIP_CUDA_CHECK=1 torchrun --nproc_per_node=1 src/finetuning/finetune.py --model_id <model_id>
-  ```
-
-  All other arguments (dataset path, base model, output dir, epochs, etc.) are taken from the index row for that `model_id`. For multi-GPU or DeepSpeed, use the same entry point with your launcher and config (not shipped here).
-
-- **Post-processing checkpoints (optional):**  
-  `src/finetuning/postproc_models.py` can add extra checkpoint rows to `index/models.csv` (e.g. different epochs). Run from repo root; it reads `INDEX_FOLDER` or `index/models.csv` by default. Edit the script’s checkpoint names/paths to match your run.
+> The MIMIC/paper runs instead drive training from the `index/` registry (`seed_index.py` writes it, `finetune.py --model_id N` reads it). The Hydra YAML under `src/configs/jobs/` (e.g. `submit_finetuning_job_1b_large.yaml`) is read **only** by the SLURM launcher `src/jobs/finetuning/submit_finetuning_job.py` — for orchestration (`n_gpu`, `backend`, which index dataset), **not** the training hyperparameters. Both are optional for a new dataset.
 
 ---
 
-## Step 4: Evaluation and plotting
+## Step 4 — Generate completions
 
-- **Compute risk (log-likelihood of PII, train/val tables):**
+The attacker queries the fine-tuned model with a direct-identifier prompt and samples **completions** (short continuations, not full notes):
 
-  Uses Hydra; config lives under `src/configs/evaluation/log_likelihood/eval.yaml`. From repo root:
+```bash
+python -m src.evaluation.pipeline.generate_completions \
+  --model-path outputs/mydata/finetuned --output outputs/mydata/completions.parquet \
+  --prompt "Name: " --k 100000 --max-new-tokens 20
+```
 
-  ```bash
-  python -m src.evaluation.pipeline.compute_risk
-  ```
-
-  Default config uses `dataset_size: 10`, `model_size: 8B`, `output_dir: ./outputs/pipeline`. Override via Hydra, e.g.:
-
-  ```bash
-  python -m src.evaluation.pipeline.compute_risk dataset_size=1 model_size=1B output_dir=./outputs/pipeline_test
-  ```
-
-  This script:
-  - Uses `index/` (and `src.evaluation.exploration.denominators`) to resolve datasets and persona paths.
-  - Writes CSVs under `output_dir` (e.g. `ll_train_*.csv`, `ll_val_true_*.csv`, `ll_all_*.csv`, `ll_all_output_*_batch.csv`).
-
-  For a **batch** variant (e.g. larger batch size):
-
-  ```bash
-  python -m src.evaluation.pipeline.compute_risk_batch
-  ```
-
-  Set `base_model_1B` / `base_model_8B` in `eval.yaml` (or env `BASE_MODEL_1B` / `BASE_MODEL_8B`) if you are not using index for base models.
-
-- **Plotting (e.g. relative leakage risk):**
-
-  After you have the evaluation CSVs (e.g. `ll_all_output_False_1B_10_batch.csv` and `ll_all_output_True_1B_10_batch.csv` under your pipeline output dir), run:
-
-  ```bash
-  python -m src.evaluation.pipeline.plot_relative_leakage_risk \
-    --output outputs/plots/relative_emission_probability_change_leakage_risk.png \
-    --top_names_output outputs/plots/top_100_names_by_factor.csv \
-    --dataset 10,100
-  ```
-
-  The script expects finetuned- and base-model CSVs under a fixed `base_dir` inside the script (see `plot_relative_leakage_risk.py`); you may need to set `base_dir` or `OUTPUT_DIR` there to match your `output_dir` from the evaluation step. Other options: `--include_val`, `--percentile`, `--prompt`, etc.
-
-  Other plotting/analysis scripts under `src/evaluation/pipeline/` and `experimental/` can be run similarly once the corresponding CSVs exist.
+These are the empirical attacker queries used to validate the theory in Step 5. (Optional for a theory-only audit.)
 
 ---
 
-## First end-to-end test (minimal)
+## Step 5 — Audit / estimate leakage
 
-Goal: run the pipeline once with minimal data (no real MIMIC download required for the code to *run*; you still need valid paths and optionally tiny synthetic data).
+Train the verification classifier and derive the extraction curves. This orchestrator **reuses the evaluation-pipeline pieces directly** — the 5-fold cross-fit verifier (`train_mia_verifier_cv`), the log-likelihood features (`compute_ll_names`), the fold-ensemble scoring of unseen candidates (`compute_scores`), the **extracted-stream FPR ≤ 5%** operating threshold (`compute_threshold_fpr5_extr`), and the closed-form curves (`theory_curves` / `attack_curves`):
 
-1. **Environment**
-   ```bash
-   cd verified-extraction-audit
-   pip install -e .
-   export PYTHONPATH=.   # if not using pip install -e .
-   ```
+```bash
+python -m src.evaluation.audit.from_labels \
+  --labeled data/labeled.parquet \
+  --base-model models/base/Llama_3.2-1B \
+  --finetuned-model outputs/mydata/finetuned \
+  --di-type name --budgets 1e5 1e6 \
+  --generations outputs/mydata/completions.parquet \
+  --output-dir outputs/mydata/audit
+```
 
-2. **Index**
-   - Ensure `index/datasets.csv` and `index/models.csv` exist (placeholders are in the repo). For a real minimal run, add one dataset row whose `dataset_path` points to an SFT JSON (from Step 1), and one model row whose `dataset_id` matches, `src_model_path` points to a base model, and `model_path` points to where you want the checkpoint.
+`outputs/mydata/audit/audit_report.json` always contains the closed-form **theoretical** curves — recall, extracted-stream FPR and TPR vs attacker query budget *Q*, at the operating threshold τ. If you pass `--generations` (Step 4), it also contains the measured **experimental** curves (completions matched to the labeled members, scored with the fold ensemble), so you can check whether theory matches experiment at each *Q*.
 
-3. **MIMIC / splits**
-   - Download MIMIC-IV `discharge.csv` to `data/raw/`, then run `python -m src.dataset.splits.mimic` to build `data/processed/splits/`. Then create filtered notes (with `___` placeholders) and personas for at least one split (e.g. `train_1`, `val_1`), and one SFT JSON (e.g. `train_1_0.05_no-kg.json`) referenced in `index/datasets.csv`. Alternatively create minimal parquet/JSON by hand to match that layout.
+<details>
+<summary><b>Paper's index-based evaluation (MIMIC)</b></summary>
 
-4. **Preprocessing**
-   - Run `fake_persona` (or your wrapper) → personas parquet.
-   - Run `pii_injection` (e.g. `--files val_1 train_1`) or manual insertion.
-   - Run `sampling` or `sampling_manual` → SFT JSON.
+The original paper evaluation computes per-name log-likelihood tables from the `index/` + personas via Hydra (`src/configs/evaluation/log_likelihood/eval.yaml`):
 
-5. **Training**
-   - Point `index/models.csv` to your base model and that SFT dataset; set `model_id` to that row.
-   - Run: `DS_SKIP_CUDA_CHECK=1 torchrun --nproc_per_node=1 src/finetuning/finetune.py --model_id <id>`.
+```bash
+python -m src.evaluation.pipeline.compute_risk dataset_size=1 model_size=1B output_dir=./outputs/pipeline
+python -m src.evaluation.pipeline.compute_risk_batch          # larger-batch variant
+python -m src.evaluation.pipeline.plot_relative_leakage_risk --dataset 10,100 \
+  --output outputs/plots/relative_leakage.png --top_names_output outputs/plots/top_100_names.csv
+```
 
-6. **Evaluation**
-   - Run: `python -m src.evaluation.pipeline.compute_risk` (override `output_dir` and config as needed). If you don’t have generation outputs yet, this still builds the train/val risk tables from the index and model paths.
-   - Run: `python -m src.evaluation.pipeline.plot_relative_leakage_risk ...` with the CSVs produced in `output_dir`.
+These write `ll_train_*.csv` / `ll_all_output_*_batch.csv` under `output_dir` and are MIMIC/index-coupled. For a new dataset, prefer `audit.from_labels` above, which is self-contained.
+</details>
 
-7. **Optional**
-   - Run `compute_risk_batch` instead of `compute_risk` for different batch behavior.
-   - Use `INDEX_FOLDER`, `PII_INSERTION_OUTPUTS`, `OUTPUT_DIR`, and base-model env vars to avoid hardcoded paths.
+---
 
-This gives you a first end-to-end pass: **MIMIC (or minimal splits) → preprocessing → training → evaluation → plotting**. Add generation (Step 3) when you have the external generation script and desired output format.
+## Other direct identifiers (MRNs, addresses, …)
+
+Extending to a new direct identifier requires only three things, all captured per type in [`src/dataset/prepare/di_types.py`](src/dataset/prepare/di_types.py): the **query prompt(s)** (e.g. `"MRN: "` instead of `"Name: "`), the **generation length** (an address needs more tokens than a name), and the **parsing method** (extract digits for an MRN, two words for a name). `name`, `attending`, `mrn`, `address`, `phone`, and `email` are built in; pass `--di-type mrn` to the injection (Step 2) and audit (Step 5) steps, or add a `DirectIdentifierType` entry to extend the registry. Nothing else in the pipeline changes.
 
 ---
 
 ## Layout (summary)
 
-- `src/dataset/pii_insertion/` — PII insertion and sampling (fake personas, injection, sampling, validation).
-- `src/dataset/splits/` — Build MIMIC splits (`mimic.py`) and optional stats table (`stats_to_latex.py`); config in `src/configs/dataset/mimic.yaml`.
-- `src/finetuning/` — Training (`finetune.py`), utils, post-processing of model index.
-- `src/configs/jobs/` — Sample finetuning job config (e.g. `submit_finetuning_job_1b_large.yaml`).
-- `src/evaluation/pipeline/` — Risk computation (`compute_risk.py`, `compute_risk_batch.py`) and plotting (`plot_relative_leakage_risk.py`, etc.); `experimental/` and `experimental/mia/` for extra analyses.
-- `src/evaluation/exploration/` — Helpers (e.g. `denominators.py`) used by the pipeline.
-- `src/configs/evaluation/log_likelihood/` — Hydra config for evaluation.
-- `src/folder_handler.py` — Index loading (datasets, models, generated notes).
-- `src/llm/` — Minimal LLM backend for PII injection (Gemini + vLLM stubs).
-- `index/` — Placeholder CSVs; replace with your datasets and models for real runs.
+- `src/dataset/prepare/` — the data-prep pipeline: `ingest` (minimal Parquet → internal splits + personas), `inject` (classify + fill + sample, offline or LLM, matched by `note_id`), `make_synthetic` (scenario 1 & 2), the `di_types` registry, and `seed_index` (optional — only for the index-driven training path).
+- `src/dataset/pii_insertion/` — synthetic-persona utilities: `fake_persona` (persona generation, incl. the MIMIC build), `build_name_filter_list`, `persona_check`.
+- `src/dataset/splits/` — MIMIC splits (`mimic.py`) and optional stats table; config in `src/configs/dataset/mimic.yaml`.
+- `src/finetuning/` — training (`finetune.py`), utils, checkpoint post-processing.
+- `src/evaluation/pipeline/` — attacker-query generation (`generate_completions`), closed-form curves (`theory_curves`, `attack_curves`), the paper's risk eval (`compute_risk*`, `plot_relative_leakage_risk`), and the verifier/attack pieces under `experimental/` + `experimental/mia/`.
+- `src/evaluation/audit/` — the generic scenario-2 audit (`from_labels`) that composes the pipeline pieces.
+- `src/jobs/smoke/` — the self-contained SLURM smoke test (`smoke_test.slurm`, `run_smoke.sh`, `build_tiny_model`).
+- `src/llm/` — LLM backends for injection (Gemini, vLLM, and an offline `mock`).
+- `src/folder_handler.py`, `index/` — the dataset/model index (placeholder CSVs; `seed_index` writes real ones).
+- `examples/synthetic/` — a ready-made synthetic dataset.
 
 ---
 

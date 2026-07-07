@@ -234,8 +234,14 @@ class DataCollatorForSupervisedDataset(object):
 
 
 def get_path_dataset(args, split):
+    data_path = args.dataset_path.replace("[SPLIT]", split)
+    # Rewrite 'train'->split (to derive the val path from a train path) only in
+    # the FILENAME, not in parent directories: an absolute path whose parent
+    # contains 'train' (e.g. /scratch/training/...) would otherwise be corrupted.
+    head, tail = os.path.split(data_path)
+    data_path = os.path.join(head, tail.replace("train", split))
     data_path = (
-        args.dataset_path.replace("[SPLIT]", split).replace("train", split) # to be able to use train and val, when giving val
+        data_path
         .replace("[SIZE]", str(args.dataset_size))
         .replace("[PII_RATE]", str(args.pii_rate))
         .replace("[KG]", str(args.kg))
@@ -268,17 +274,25 @@ def finetune():
     ft_args.infer = False
     print(ft_args)
 
-    folder_handler = FolderHandler()
-    model = folder_handler.query_model_unique(kwargs_filter={"model_id": ft_args.model_id}, property=None)
-    print(model)
-    ft_args.model_name_or_path = model['src_model_path'] # base model
-    ft_args.output_dir = model['model_path']
-    ft_args.n_epochs = model['n_epochs']
-    ft_args.dataset_size = model['dataset_size']
-    ft_args.pii_rate = model['pii_rate']
-    ft_args.kg = "no-kg"
-    ft_args.dataset_path = model['dataset_path']
-    # exit()
+    if ft_args.model_id is not None:
+        # Index mode: pull base model / dataset / output / epochs from index/models.csv.
+        folder_handler = FolderHandler()
+        model = folder_handler.query_model_unique(kwargs_filter={"model_id": ft_args.model_id}, property=None)
+        print(model)
+        ft_args.model_name_or_path = model['src_model_path']  # base model
+        ft_args.output_dir = model['model_path']
+        ft_args.n_epochs = model['n_epochs']
+        ft_args.dataset_size = model['dataset_size']
+        ft_args.pii_rate = model['pii_rate']
+        ft_args.kg = "no-kg"
+        ft_args.dataset_path = model['dataset_path']
+    else:
+        # Direct mode (no index, no config): everything comes from the CLI flags
+        # --model_name_or_path / --dataset_path / --output_dir / --n_epochs.
+        if not (ft_args.model_name_or_path and ft_args.dataset_path):
+            raise ValueError(
+                "Provide --model_id (index mode) OR --model_name_or_path and --dataset_path "
+                "(direct mode).")
 
     model, tokenizer = load_model(ft_args)
 

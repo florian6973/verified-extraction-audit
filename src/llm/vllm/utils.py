@@ -138,8 +138,8 @@ if __name__ == "__main__":
 
     # # load huggingface model
     # from transformers import AutoTokenizer, AutoModelForCausalLM
-    # tokenizer = AutoTokenizer.from_pretrained(" + REPO_ROOT + "/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
-    # model = AutoModelForCausalLM.from_pretrained(" + REPO_ROOT + "/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
+    # tokenizer = AutoTokenizer.from_pretrained(REPO_ROOT + "/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
+    # model = AutoModelForCausalLM.from_pretrained(REPO_ROOT + "/outputs_models/finetuning/Llama_3.2-1B-1-0.1-False-1/Llama_3.2-1B")
     
 
     # prompts = ['Generate', 'Generate a', 'Generate a clinical', 'Generate a clinical note']

@@ -144,19 +144,86 @@ def prepare_models():
 
 def load_model(model_path, base=False):
     tok = AutoTokenizer.from_pretrained(model_path)
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
 
     if base == "scratch":
         config = AutoConfig.from_pretrained(model_path)
         model = AutoModelForCausalLM.from_config(config)
-    else:
+    elif torch.cuda.is_available():
         model = AutoModelForCausalLM.from_pretrained(
             model_path,
             torch_dtype=torch.float16,
             device_map="auto",
         )
+    else:
+        # CPU fallback (e.g. local smoke test): fp32, no device_map.
+        model = AutoModelForCausalLM.from_pretrained(model_path, torch_dtype=torch.float32)
 
     model.eval()
     return tok, model
+
+
+# Shared Arrow schema for the generation parquet.
+GEN_SCHEMA = pa.schema([
+    ("dataset_size", pa.int64()),
+    ("model_size", pa.string()),
+    ("pii_rate", pa.float32()),
+    ("n_epochs", pa.int64()),
+    ("pii_type", pa.string()),
+    ("prompt", pa.string()),
+    ("value", pa.string()),
+    ("ll", pa.float32()),
+    ("n_tokens", pa.int32()),
+    ("tokens", pa.list_(pa.int32())),
+])
+
+
+def generate_single(model_path, output_path, k, prompt="Name: ", pii_type="name",
+                    batch_size=64, max_new_tokens=20, meta=None, base=False):
+    """Generate ``k`` completions of ``prompt`` from one model to ``output_path``.
+
+    The dataset-agnostic entry used by the smoke test / new datasets: it drives
+    the same ``generate_batch`` sampler as the index-based path, but takes an
+    explicit model path instead of resolving a hardcoded ``model_id``.
+    """
+    meta = meta or {}
+    tok, model = load_model(model_path, base=base)
+    writer = ParquetWriter(output_path, GEN_SCHEMA)
+    buffer = []
+    remaining = k
+    pbar = tqdm(total=k, desc=f"{pii_type} | {prompt}")
+    while remaining > 0:
+        b = min(batch_size, remaining)
+        out = generate_batch(prompt=prompt, tok=tok, model=model,
+                             batch_size=b, max_new_tokens=max_new_tokens)
+        for i in range(b):
+            buffer.append({
+                "dataset_size": int(meta.get("dataset_size", 0)),
+                "model_size": str(meta.get("model_size", "")),
+                "pii_rate": float(meta.get("pii_rate", 0.0)),
+                "n_epochs": int(meta.get("n_epochs", 0)),
+                "pii_type": pii_type,
+                "prompt": prompt,
+                "value": out["values"][i],
+                "ll": out["ll"][i],
+                "n_tokens": out["n_tokens"][i],
+                "tokens": out["tokens"][i],
+            })
+        if len(buffer) >= 5000:
+            writer.write(buffer)
+            buffer.clear()
+        remaining -= b
+        pbar.update(b)
+    pbar.close()
+    if buffer:
+        writer.write(buffer)
+    writer.close()
+    del tok, model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    print("Finished:", output_path)
 
 
 # ======================
@@ -277,12 +344,44 @@ def generate_ll(
 # Entrypoint
 # ======================
 
-if __name__ == "__main__":
-    for k in [1000, 10_000, 100_000, 1_000_000, 10_000_000]:
-        generate_ll(
-            k=k,
-            batch_size=64,
-            max_new_tokens=20,
-        )
+def main():
+    import argparse
+    parser = argparse.ArgumentParser(
+        description="Generate attacker-query completions from a fine-tuned model.")
+    parser.add_argument("--model-path", default=None,
+                        help="Generate for this single model (bypasses the hardcoded index). "
+                             "If omitted, runs the authors' index-based loop.")
+    parser.add_argument("--output", default=None, help="Output parquet path")
+    parser.add_argument("--k", type=int, default=10000, help="Number of completions to sample")
+    parser.add_argument("--prompt", default="Name: ", help="Attacker query prompt")
+    parser.add_argument("--pii-type", default="name")
+    parser.add_argument("--batch-size", type=int, default=64)
+    parser.add_argument("--max-new-tokens", type=int, default=20)
+    parser.add_argument("--base", action="store_true", help="Treat model as the base/reference model")
+    parser.add_argument("--dataset-size", type=int, default=1)
+    parser.add_argument("--model-size", default="")
+    parser.add_argument("--pii-rate", type=float, default=1.0)
+    parser.add_argument("--n-epochs", type=int, default=1)
+    args = parser.parse_args()
 
-# CUDA_VISIBLE_DEVICES=0 python -m src.evaluation.pipeline.experimental_recall_2
+    if args.model_path:
+        out = args.output or os.path.join(
+            REPO_ROOT, "outputs", "pii_leakage", "experimental-recall-all-large",
+            f"generation_{bool(args.base)}_all_{args.dataset_size}_{args.model_size}_"
+            f"{args.pii_rate}_{args.n_epochs}_{args.k}.parquet")
+        meta = dict(dataset_size=args.dataset_size, model_size=args.model_size,
+                    pii_rate=args.pii_rate, n_epochs=args.n_epochs)
+        generate_single(args.model_path, out, args.k, prompt=args.prompt, pii_type=args.pii_type,
+                        batch_size=args.batch_size, max_new_tokens=args.max_new_tokens,
+                        meta=meta, base=args.base)
+    else:
+        # Authors' index-based path (unchanged): resolves a hardcoded model_id.
+        for k in [1000, 10_000, 100_000, 1_000_000, 10_000_000]:
+            generate_ll(k=k, batch_size=64, max_new_tokens=20)
+
+
+if __name__ == "__main__":
+    main()
+
+# CUDA_VISIBLE_DEVICES=0 python -m src.evaluation.pipeline.generate_completions \
+#   --model-path outputs/mydata/finetuned --k 10000 --output outputs/mydata/completions.parquet

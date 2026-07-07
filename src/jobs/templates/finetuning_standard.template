@@ -68,13 +68,11 @@ srun --export=ALL,DS_SKIP_CUDA_CHECK,CUDA_VISIBLE_DEVICES \
                --dataset_path ${DATASET_PATH}
 fi
 
-# Infer
-python src/finetuning/infer.py \
-          --model_name_or_path ${FINETUNED_MODEL_PATH} \
-          --folder ${GENERATION_PATH} \
-          --batch_size 10 $( [ "$LORA" == "True" ] && echo "--lora" ) \
-          --total_samples ${N_SAMPLES} \
-          --backend huggingface
+# Generate attacker-query completions (experimental extraction branch)
+python -m src.evaluation.pipeline.generate_completions \
+          --model-path ${FINETUNED_MODEL_PATH} \
+          --output ${GENERATION_PATH}/completions.parquet \
+          --k ${N_SAMPLES} --prompt "Name: " --max-new-tokens 20
 
 # Compute perplexity
 if [ "$INFER_ONLY" != "True" ]; then

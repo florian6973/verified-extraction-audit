@@ -13,7 +13,7 @@ import re
 from pathlib import Path
 
 # Base directory containing all experimental recall outputs
-BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
+BASE_DIR = REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
 
 # Path to threshold_fpr5_results.csv
 # THRESHOLD_FPR5_CSV = os.path.join(BASE_DIR, "threshold_fpr5_results.csv")

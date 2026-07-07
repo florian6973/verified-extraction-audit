@@ -1,17 +1,22 @@
-# PII Insertion
+# Synthetic-persona utilities
 
-Detailed explanations for the PII insertion pipeline.
+Helpers for generating and checking the synthetic personas used to fill the
+`___` blanks. **Direct-identifier injection and sampling now live in one place**,
+`src/dataset/prepare/inject.py` (see the repo README, Step 2) — this folder only
+provides the persona generation it consumes.
 
-## Step-by-step
+- `fake_persona.py` — the `FakePersonas` class (patient/physician names, MRN,
+  address, phone, email, …). Run as a script to build the MIMIC personas
+  (`splits_filtered_v* + splits_personas_v*` from the MIMIC splits):
 
-Make sure to be located in the Git folder, at the root level.
+  ```bash
+  python src/dataset/pii_insertion/fake_persona.py
+  ```
 
-1. Generate fake profiles using `fake_persona.py`: `python src/dataset/pii_insertion/fake_persona.py`.
-2. Complete the notes using the script `pii_injection.py`. You can use `gemini-2.5-flash` or `Qwen3-32B-AWQ`.
-3. For manual insertion, run the file `manual_insertion.py`.
-4. Perform random sampling to get the desired PII level and generate the dataset files for SFT with `sampling.py`: `python src/dataset/pii_insertion/sampling.py` or `sampling_manual.py` depending on the type of inserted PII you would like to use
+  For a non-MIMIC dataset, `src/dataset/prepare/ingest.py` generates personas
+  directly from a `(subject_id, note)` Parquet — no demographics tables needed.
 
-## Validation
-
-1. For fake profiles, use `persona_check.py` to check the distributions of each field. It will check and display if any PII is both in the training and the validation sets, as well as if values are duplicated inside the same dataset (outputs plots in `outputs/splits`)
-
+- `build_name_filter_list.py` — build first/last-name gazetteers from `faker`
+  locales (used to filter non-name hallucinations during evaluation).
+- `persona_check.py` — QA on the generated personas (train/val disjointness,
+  name duplication, canary flags).

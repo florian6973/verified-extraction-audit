@@ -1,5 +1,6 @@
 import pandas as pd
 import subprocess
+import sys
 import tempfile
 import os
 import argparse
@@ -8,23 +9,8 @@ from src.evaluation.pipeline.experimental.config_helper import format_path, get_
 from src.evaluation.pipeline.experimental.config_loader import load_config
 
 from src._repo import REPO_ROOT
-parser = argparse.ArgumentParser(description='Compute scores for MIA')
-parser.add_argument('--config', type=str, default=None, help='Path to config file')
-args = parser.parse_args()
-
-config = load_config(args.config)
-
-data_path = os.path.join(get_output_dir(config), "all_names_ll_computed.csv")
-model = config['filters']['model']
-dataset_size = config['filters']['dataset_size']
-pii_rate = config['filters']['pii_rate']
-n_epochs = config['filters']['n_epochs']
-# data_path = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-0.1/all_names_ll_computed.csv"
-
-src_pred = os.path.join(get_output_dir(config), f"scores_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}.csv")
-src_other = os.path.join(get_output_dir(config), f"models_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}")
-# src_pred = " + REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3.csv"
-# src_other = " + REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_0.1_n_epochs_3"
+# src_pred = REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3.csv"
+# src_other = REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/models_1B_10_pii_rate_0.1_n_epochs_3"
 
 
 def compute_scores(data_path, src_pred, src_other, output_path=None, name_col="value", score_col="score_oof_member_proba"):
@@ -187,9 +173,9 @@ def compute_scores(data_path, src_pred, src_other, output_path=None, name_col="v
         
         try:
             # Call train_mia_verifier_cv.py score_unseen
-            script_path = " + REPO_ROOT + "/src/evaluation/pipeline/experimental/mia/train_mia_verifier_cv.py"
+            script_path = os.path.join(REPO_ROOT, "src", "evaluation", "pipeline", "experimental", "mia", "train_mia_verifier_cv.py")
             cmd = [
-                "python", script_path, "score_unseen",
+                sys.executable, script_path, "score_unseen",
                 "--models_dir", src_other,
                 "--features_csv", temp_csv,
                 "--out_csv_path", temp_out_csv,
@@ -308,6 +294,22 @@ def compute_scores(data_path, src_pred, src_other, output_path=None, name_col="v
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Compute scores for MIA')
+    parser.add_argument('--config', type=str, default=None, help='Path to config file')
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+
+    data_path = os.path.join(get_output_dir(config), "all_names_ll_computed.csv")
+    model = config['filters']['model']
+    dataset_size = config['filters']['dataset_size']
+    pii_rate = config['filters']['pii_rate']
+    n_epochs = config['filters']['n_epochs']
+    # data_path = REPO_ROOT + "/outputs/pii_leakage/experimental-recall-0.1/all_names_ll_computed.csv"
+
+    src_pred = os.path.join(get_output_dir(config), f"scores_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}.csv")
+    src_other = os.path.join(get_output_dir(config), f"models_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}")
+
     # Optionally specify output path, otherwise auto-generates from data_path
     output_path = None  # Set to a specific path if desired
     

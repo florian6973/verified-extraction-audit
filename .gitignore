@@ -181,3 +181,6 @@ trash_perplexity/
 
 EXPORT_PLAN.md
 EXPORT.md
+# SLURM smoke-test job logs (written to submission dir)
+audit-smoke_*.out
+audit-smoke_*.err

@@ -11,9 +11,9 @@ import os
 import pandas as pd
 
 
-SPLITS_DIR = " + REPO_ROOT + "/data/processed/splits_filtered_v12"
+SPLITS_DIR = REPO_ROOT + "/data/processed/splits_filtered_v12"
 PII_CSV_PATH = (
-    " + REPO_ROOT + "/outputs/pii_leakage/pipeline/"
+    REPO_ROOT + "/outputs/pii_leakage/pipeline/"
     "ll_all_output_False_1B_100_batch.csv"
 )
 

@@ -16,10 +16,10 @@ import json
 import pickle
 
 # Base directory containing all experimental recall outputs
-BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
+BASE_DIR = REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
 
 # Output directory for plots
-OUTPUT_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output/fpr_tpr_plots"
+OUTPUT_DIR = REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output/fpr_tpr_plots"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 # Target budgets

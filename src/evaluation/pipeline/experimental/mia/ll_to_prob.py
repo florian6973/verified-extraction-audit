@@ -12,20 +12,7 @@ import argparse
 from src.evaluation.pipeline.experimental.config_loader import load_config
 from src.evaluation.pipeline.experimental.config_helper import format_path, get_output_dir
 
-parser = argparse.ArgumentParser(description='Convert LL to probability')
-parser.add_argument('--config', type=str, default=None, help='Path to config file')
-args = parser.parse_args()
-
-config = load_config(args.config)
-
-model = config['filters']['model']
-dataset_size = config['filters']['dataset_size']
-pii_rate = config['filters']['pii_rate']
-n_epochs = config['filters']['n_epochs']
-
-# Input CSV file
-input_csv = os.path.join(get_output_dir(config), f"scores_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}.csv")
-# input_csv = " + REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3.csv"
+# input_csv = REPO_ROOT + "/outputs/pii_leakage/pipeline/plots/mia-verifier/scores_1B_10_pii_rate_0.1_n_epochs_3.csv"
 
 
 def convert_ll_to_prob(df, ll_col):
@@ -176,6 +163,20 @@ def convert_all_ll_to_prob(input_path, output_path=None):
 
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description='Convert LL to probability')
+    parser.add_argument('--config', type=str, default=None, help='Path to config file')
+    args = parser.parse_args()
+
+    config = load_config(args.config)
+
+    model = config['filters']['model']
+    dataset_size = config['filters']['dataset_size']
+    pii_rate = config['filters']['pii_rate']
+    n_epochs = config['filters']['n_epochs']
+
+    # Input CSV file
+    input_csv = os.path.join(get_output_dir(config), f"scores_{model}_{dataset_size}_pii_rate_{pii_rate}_n_epochs_{n_epochs}.csv")
+
     # Output path will be automatically generated with "_p" suffix
     # Or specify a custom output path if desired
     output_csv = None  # None = auto-generate with "_p" suffix

@@ -8,29 +8,8 @@ import torch
 from tqdm import tqdm
 import gc
 
-from config_loader import load_config
-from config_helper import format_path, get_output_dir, get_finetuned_model, get_base_model
-
-# Parse arguments first to get config
-parser = argparse.ArgumentParser(description='Compute LL for all names from base and finetuned models')
-parser.add_argument('--config', type=str, default=None, help='Path to config file')
-parser.add_argument('--input', type=str, default=None, help='Path to merged names CSV (overrides config)')
-parser.add_argument('--output', type=str, default=None, help='Output CSV path (overrides config)')
-parser.add_argument('--base_model', type=str, default=None, help='Path to base model (overrides config)')
-parser.add_argument('--finetuned_model', type=str, default=None, help='Path to finetuned model (overrides config)')
-args = parser.parse_args()
-
-# Load config
-config = load_config(args.config)
-
-# Get paths from config (can be overridden by args)
-OUTPUT_DIR = get_output_dir(config)
-INPUT_FILE = args.input or os.path.join(OUTPUT_DIR, 'all_names_merged.csv')
-OUTPUT_FILE = args.output or os.path.join(OUTPUT_DIR, 'all_names_ll_computed.csv')
-BASE_MODEL_PATH = args.base_model or get_base_model(config)
-FINETUNED_MODEL_PATH = args.finetuned_model or get_finetuned_model(config)
-PROMPTS = config['prompts']
-
+from src.evaluation.pipeline.experimental.config_loader import load_config
+from src.evaluation.pipeline.experimental.config_helper import format_path, get_output_dir, get_finetuned_model, get_base_model
 
 def load_model(model_path):
     """Load a language model for ll computation."""
@@ -213,6 +192,26 @@ def compute_ll_for_all_names(input_file, output_file):
 
 
 if __name__ == "__main__":
+    # Parse arguments first to get config
+    parser = argparse.ArgumentParser(description='Compute LL for all names from base and finetuned models')
+    parser.add_argument('--config', type=str, default=None, help='Path to config file')
+    parser.add_argument('--input', type=str, default=None, help='Path to merged names CSV (overrides config)')
+    parser.add_argument('--output', type=str, default=None, help='Output CSV path (overrides config)')
+    parser.add_argument('--base_model', type=str, default=None, help='Path to base model (overrides config)')
+    parser.add_argument('--finetuned_model', type=str, default=None, help='Path to finetuned model (overrides config)')
+    args = parser.parse_args()
+
+    # Load config
+    config = load_config(args.config)
+
+    # Get paths from config (can be overridden by args)
+    OUTPUT_DIR = get_output_dir(config)
+    INPUT_FILE = args.input or os.path.join(OUTPUT_DIR, 'all_names_merged.csv')
+    OUTPUT_FILE = args.output or os.path.join(OUTPUT_DIR, 'all_names_ll_computed.csv')
+    BASE_MODEL_PATH = args.base_model or get_base_model(config)
+    FINETUNED_MODEL_PATH = args.finetuned_model or get_finetuned_model(config)
+    PROMPTS = config['prompts']
+
     print("=" * 60)
     print("Computing LL for all names")
     print("=" * 60)

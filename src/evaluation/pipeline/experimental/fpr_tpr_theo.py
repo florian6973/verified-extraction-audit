@@ -18,7 +18,7 @@ import re
 from matplotlib.lines import Line2D
 
 # Base directory containing all experimental recall outputs
-BASE_DIR = " + REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
+BASE_DIR = REPO_ROOT + "/outputs/pii_leakage/experimental-recall-output"
 
 
 def parse_directory_name(dir_name):

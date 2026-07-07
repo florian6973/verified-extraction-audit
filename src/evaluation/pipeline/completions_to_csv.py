@@ -39,7 +39,7 @@ def convert_parquet_to_csv(parquet_path, csv_path=None, overwrite=False):
         df['tokens'] = df['tokens'].apply(lambda x: str(x) if isinstance(x, list) else x)
     
     # Ensure ll column is properly formatted
-    # In experimental_recall_2.py, ll is a float (total log-likelihood)
+    # In generate_completions.py, ll is a float (total log-likelihood)
     # In experimental_recall.py, ll is a list (log-likelihood per token)
     # We'll keep it as-is since the parquet format uses float
     if 'll' in df.columns and df['ll'].dtype == 'object':
@@ -76,7 +76,7 @@ def convert_all_parquet_files(base_dir, pattern="generation_*_all_*.parquet", ov
 
 
 if __name__ == "__main__":
-    # Default output directory from experimental_recall_2.py
+    # Default output directory from generate_completions.py
     from src._repo import REPO_ROOT
     base_dir = os.path.join(REPO_ROOT, "outputs", "pii_leakage", "experimental-recall-all-test")
     

@@ -427,13 +427,13 @@ if avg_thr_from_fpr5 is not None and args.config is not None:
     print(f"Running theoretical evaluation with threshold from FPR5: {avg_thr_from_fpr5:.6f}")
     print(f"{'='*80}")
     
-    # Find pipeline-attack-5.py
+    # Find attack_curves.py
     # evaluate_scores.py is in experimental/mia/
-    # pipeline-attack-5.py is in pipeline/
+    # attack_curves.py is in pipeline/
     script_dir = os.path.dirname(os.path.abspath(__file__))  # experimental/mia/
     experimental_dir = os.path.dirname(script_dir)  # experimental/
     pipeline_dir = os.path.dirname(experimental_dir)  # pipeline/
-    pipeline_attack_script = os.path.join(pipeline_dir, 'pipeline-attack-5.py')
+    pipeline_attack_script = os.path.join(pipeline_dir, 'attack_curves.py')
     
     if os.path.exists(pipeline_attack_script):
         cmd = ['python', pipeline_attack_script, '--config', args.config, '--tau', str(avg_thr_from_fpr5)]
@@ -451,7 +451,7 @@ if avg_thr_from_fpr5 is not None and args.config is not None:
         except Exception as e:
             print(f"\n✗ Unexpected error running theoretical evaluation: {e}")
     else:
-        print(f"Warning: pipeline-attack-5.py not found at: {pipeline_attack_script}")
+        print(f"Warning: attack_curves.py not found at: {pipeline_attack_script}")
         print(f"  Script directory: {script_dir}")
         print(f"  Experimental directory: {experimental_dir}")
         print(f"  Pipeline directory: {pipeline_dir}")

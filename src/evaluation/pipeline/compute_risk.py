@@ -113,7 +113,7 @@ def prepare_val_true(cfg):
     assert len(dfs['persona_path'].unique()) == 1
     df_personas_path = os.path.join(os.path.dirname(dfs['persona_path'].unique()[0]), 'val.parquet')
     print("Reading val from", df_personas_path)
-    # val_path = " + REPO_ROOT + "/data/processed/splits_personas_v12/val.parquet"
+    # val_path = REPO_ROOT + "/data/processed/splits_personas_v12/val.parquet"
     df_val = pd.read_parquet(df_personas_path)
     # print(df_val)
     # exit()
