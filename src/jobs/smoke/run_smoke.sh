@@ -10,6 +10,17 @@
 #   SCENARIO=2          : notes with identifiers already embedded + a labeled set
 #                         (as a user would bring to audit a real corpus) -> SFT.
 #
+# What this validates: the pipeline runs end-to-end AND the membership verifier
+# separates members from non-members. Once the tiny model overfits (train loss
+# -> ~0.3), audit_report.json should show a verifier AUC ~0.97 and a theoretical
+# recall_with_verification asymptote ~0.97 -- that is the pass signal.
+# NOTE: experimental generation-extraction (unique_members_extracted) stays ~0
+# at this toy scale, and that is expected, not a bug: the ~80k-param transformer
+# body can't coherently *emit* the high-entropy names by sampling (greedy even
+# skips the name slot), and per-name pi ~1e-5 means ~1e5 queries are needed. This
+# matches the theoretical curve at Q=1000 (~0.01). Real extraction needs a
+# coherent model + K~1e5 -- that is what the MIMIC path exercises.
+#
 # Shared: build tiny model -> train (direct) -> generate completions -> audit.
 # Override any knob via environment variables (see defaults below).
 set -euo pipefail
