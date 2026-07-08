@@ -41,6 +41,7 @@ N_EPOCHS="${N_EPOCHS:-3}"
 K="${K:-100000}"                     # attacker-query completions
 BUDGETS="${BUDGETS:-1e5 1e6}"
 AUDIT_ONLY="${AUDIT_ONLY:-}"         # set to 1 to skip steps 1-5 and re-audit existing $WORK artifacts
+FILTER_NAMES="${FILTER_NAMES:-}"    # set to 1 to drop non-name junk before the confusion matrix
 
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 export DATA_ROOT="$WORK/processed"
@@ -88,7 +89,7 @@ echo "==== [6/6] audit (verifier + extracted-stream FPR + theory & experimental)
 $PYTHON -m src.evaluation.audit.from_labels \
     --labeled "$WORK/labeled.parquet" \
     --base-model "$BASE_MODEL" --finetuned-model "$WORK/finetuned" \
-    --di-type "$DI_TYPE" --budgets $BUDGETS \
+    --di-type "$DI_TYPE" --budgets $BUDGETS ${FILTER_NAMES:+--filter-names} \
     --generations "$WORK/completions.parquet" --output-dir "$WORK/audit"
 
 echo "==== MIMIC RUN COMPLETE ===="
