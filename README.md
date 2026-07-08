@@ -11,19 +11,17 @@ The audit answers *"how much does a fine-tuned model leak the direct identifiers
 - **Scenario 1 — synthetic or "perfectly" de-identified data (as in the paper).** Your notes have their direct identifiers removed (`___`). You **inject** synthetic identifiers into the blanks at a chosen rate, fine-tune, and measure how much the model memorizes and leaks. No labeled file to prepare — injection records the members for you.
 - **Scenario 2 — a real, imperfectly de-identified corpus you want to audit.** The identifiers are already in the notes; there is no injection. You provide a small **labeled** file (a handful of identifiers marked member / non-member, from a manual review or a de-identification tool) and estimate the actual leakage.
 
-The synthetic smoke test covers both: `run_smoke.sh` (scenario 1) and `SCENARIO=2 run_smoke.sh` (scenario 2).
-
 ---
 
 ## Overview
 
-One linear pipeline. Only how the training data and labeled set are produced (Steps 1–2) differs between the two scenarios — **Steps 3–5 are identical**:
+Only how the training data and labeled set are produced (Steps 1–2) differs between the two scenarios — **Steps 3–5 are identical**:
 
 1. **Prepare data** → get your notes into a `(subject_id, note)` Parquet and `ingest` them into internal splits. *(Scenario 1: the notes carry `___` blanks and `ingest` also builds the synthetic personas the injector fills.)*
 2. **Inject** *(scenario 1 only)* → fill the blanks with synthetic direct identifiers (offline or LLM), sampled to the target rate → SFT dataset + labeled set. *Scenario 2 skips this: the identifiers are already in the notes and you bring your own labeled set.*
 3. **Train** → fine-tune a language model on the SFT data.
 4. **Generate** → sample attacker-query *completions* from the fine-tuned model.
-5. **Audit** → train the verification classifier and report the theoretical + experimental extraction curves.
+5. **Audit** → train the verification classifier and report the analytical + experimental extraction curves.
 
 ### Examples
 
@@ -53,8 +51,6 @@ Each writes a leakage report to `<work>/audit/audit_report.json` (e.g. `outputs/
 
 - **Configuration is minimal.** The whole pipeline is driven by command-line flags and a single env var:
   - `DATA_ROOT` — where the pipeline writes its intermediate per-split files (default: `data/processed`).
-
-  The legacy env vars are needed **only** for the original paper path: `INDEX_FOLDER` / `OUTPUT_DIR` for index-based training (`finetune.py --model_id`) and the `compute_risk` eval, and `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` for `--api gemini` injection. Both are called out in the collapsibles below; neither the new-dataset nor the MIMIC-subset path uses them.
 
 - **Reproducibility.** Every step is seeded (`--seed`, default 42) and deterministic — splits, personas, which blanks get injected, generation, the verifier, training. The one exception is LLM classification (`inject --classifier llm`), which depends on the model; use `--classifier label` for a bit-for-bit reproducible injection.
 
@@ -202,7 +198,7 @@ python -m src.evaluation.pipeline.generate_completions \
   --prompt "Name: " --k 100000 --max-new-tokens 20
 ```
 
-These are the empirical attacker queries used to validate the theory in Step 5. (Optional for a theory-only audit.)
+These are the empirical attacker queries used to validate the analytical curves in Step 5. (Optional for an analytical-only audit.)
 
 ---
 
@@ -220,7 +216,7 @@ python -m src.evaluation.audit.from_labels \
   --output-dir outputs/mydata/audit
 ```
 
-`outputs/mydata/audit/audit_report.json` reports the verifier AUC and the closed-form **theoretical** curves — recall, extracted-stream FPR/TPR vs attacker query budget *Q*, at the operating threshold τ. With `--generations` (Step 4) it adds the measured **experimental** extraction: the full confusion matrix (TP/FP, recall, TPR, FPR, PPV) over the generated candidates with 95% bootstrap CIs, so you can check theory against experiment at each *Q*. A completion counts as extracting a member only when the name is clean at its start (the paper's position filter, on by default; `--no-position-match` disables it), and `--filter-names` drops non-name junk from the false-positive pool.
+`outputs/mydata/audit/audit_report.json` reports the verifier AUC and the closed-form **analytical** curves — recall, extracted-stream FPR/TPR vs attacker query budget *Q*, at the operating threshold τ. With `--generations` (Step 4) it adds the measured **experimental** extraction: the full confusion matrix (TP/FP, recall, TPR, FPR, PPV) over the generated candidates with 95% bootstrap CIs, so you can check the analytical curves against experiment at each *Q*. A completion counts as extracting a member only when the name is clean at its start (the paper's position filter, on by default; `--no-position-match` disables it), and `--filter-names` drops non-name junk from the false-positive pool.
 
 <details>
 <summary><b>Paper's index-based evaluation (MIMIC)</b></summary>
@@ -259,6 +255,11 @@ Extending to a new direct identifier requires only three things, all captured pe
 - `src/llm/` — LLM backends for injection: any OpenAI-compatible server (`openai`), plus `gemini`, `vllm`, and an offline `mock`.
 - `src/folder_handler.py`, `index/` — the dataset/model index (placeholder CSVs; `seed_index` writes real ones).
 - `examples/synthetic/` — a ready-made synthetic dataset.
+
+## Legacy pipeline
+
+The legacy env vars are needed **only** to run the paper-specific code: `INDEX_FOLDER` / `OUTPUT_DIR` for index-based training (`finetune.py --model_id`) and the `compute_risk` eval, and `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` for `--api gemini` injection. Both are called out in the collapsibles below; neither the new-dataset nor the MIMIC-subset path uses them.
+
 
 ---
 
