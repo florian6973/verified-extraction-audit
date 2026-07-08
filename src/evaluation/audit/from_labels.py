@@ -282,9 +282,45 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
             "ppv_ci95": _ci(ppvs) if ppvs else None,
             "recall_with_verification_ci95": _ci(recs) if recs else None,
         })
+
+    # Coverage calibration: is pi = exp(LL) actually the per-query generation rate?
+    # For each member, compare its empirical hit count in the generations to N*pi
+    # (its expected count under the theory). ratio >> 1 => pi under-predicts.
+    coverage_calibration = None
+    try:
+        import math
+        from collections import Counter
+        counts = Counter(gen_cands)          # multiplicities over all N generations
+        sdf = pd.read_csv(scores_csv)
+        ll_col = f"ft_{di.primary_prompt}"
+        rows = []
+        for v, yt, ll in zip(sdf["value"], sdf["y_true"], sdf[ll_col]):
+            if int(yt) != 1:
+                continue
+            pi = math.exp(float(ll)) if pd.notna(ll) else 0.0
+            rows.append((v, pi, counts.get(v, 0), n_gen * pi))
+        ddf = pd.DataFrame(rows, columns=["value", "pi", "empirical_hits", "expected_hits_N_pi"])
+        ddf.to_csv(os.path.join(out_dir, "coverage_diag.csv"), index=False)
+        g = ddf[(ddf["empirical_hits"] > 0) & (ddf["pi"] > 0)]
+        ratio = (g["empirical_hits"] / g["expected_hits_N_pi"]) if len(g) else pd.Series(dtype=float)
+        coverage_calibration = {
+            "members_generated": int((ddf["empirical_hits"] > 0).sum()),
+            "median_empirical_over_expected": round(float(ratio.median()), 4) if len(ratio) else None,
+            "iqr_empirical_over_expected": ([round(float(ratio.quantile(.25)), 4),
+                                             round(float(ratio.quantile(.75)), 4)] if len(ratio) else None),
+            "generated_but_expected_lt_0p5": int(((ddf["empirical_hits"] > 0)
+                                                  & (ddf["expected_hits_N_pi"] < 0.5)).sum()),
+            "note": ("empirical_hits vs N*pi per member (coverage_diag.csv). ratio>1 => pi=exp(LL) "
+                     "under-predicts the true generation rate; that gap (not casing) drives "
+                     "experimental recall_without > theoretical."),
+        }
+    except Exception as e:  # diagnostic must never break the audit
+        coverage_calibration = {"error": repr(e)}
+
     return {"n_generations": int(n_gen),
             "unique_candidates": len(uniq_all),
             "strict_match": bool(strict_match),
+            "coverage_calibration": coverage_calibration,
             "name_filter_applied": bool(filter_names),
             "unique_candidates_before_filter": int(n_before_filter),
             "unique_members_extracted": int(is_member.sum()),
