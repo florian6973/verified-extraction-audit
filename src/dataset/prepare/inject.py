@@ -62,6 +62,17 @@ def classify_label(text, default_di):
             for i, pos in enumerate(_blank_offsets(text))}
 
 
+def classify_first(text, default_di):
+    """Put the DI in the FIRST blank only; every other blank stays ``___``.
+
+    Deterministic and LLM-free — a fast way to test leakage. In MIMIC discharge
+    notes the first ``___`` is the ``Name:`` field, so this injects exactly one
+    identifier per note (one clean member), which the audit can then extract.
+    """
+    n = len(_blank_offsets(text))
+    return {str(i + 1): (default_di.category if i == 0 else "other") for i in range(n)}
+
+
 def classify_llm(text, note_id, api, llm_kwargs):
     """{blank_number: category} from a single LLM call classifying all blanks.
 
@@ -122,8 +133,12 @@ def inject_split(filtered_df, personas_df, di, classifier, api, llm_kwargs, di_r
         if isinstance(persona, pd.DataFrame):        # duplicate note_id -> take first
             persona = persona.iloc[0]
 
-        cats = (classify_label(text, di) if classifier == "label"
-                else classify_llm(text, note_id, api, llm_kwargs))
+        if classifier == "label":
+            cats = classify_label(text, di)
+        elif classifier == "first":
+            cats = classify_first(text, di)
+        else:
+            cats = classify_llm(text, note_id, api, llm_kwargs)
 
         # Rebuild the note, filling each blank at the sampling rate.
         segments = text.split("___")
@@ -155,8 +170,10 @@ def main():
                         help="Root with splits_filtered_v*/ and splits_personas_v* (env DATA_ROOT)")
     parser.add_argument("--version", type=int, default=8)
     parser.add_argument("--splits", nargs="+", default=["train", "val"])
-    parser.add_argument("--classifier", choices=["label", "llm"], default="label",
-                        help="How to classify each blank: note-label heuristic (offline) or one LLM call/note")
+    parser.add_argument("--classifier", choices=["label", "first", "llm"], default="label",
+                        help="How to classify each blank: 'label' note-label heuristic (offline), "
+                             "'first' DI in the first blank only (offline, fast leakage test), "
+                             "or 'llm' one LLM call/note")
     parser.add_argument("--api", choices=["gemini", "vllm", "openai", "mock"], default="mock",
                         help="LLM backend when --classifier llm ('openai' = any OpenAI-compatible server)")
     parser.add_argument("--model", default="mock", help="LLM model name when --classifier llm")

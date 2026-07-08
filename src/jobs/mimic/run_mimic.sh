@@ -25,7 +25,9 @@ VAL_FRAC="${VAL_FRAC:-0.2}"          # held-out non-member subjects
 DI_TYPE="${DI_TYPE:-name}"
 DI_RATE="${DI_RATE:-0.01}"           # direct-identifier rate (Table-4 rows)
 
-# --- LLM classifier (OpenAI-compatible; e.g. your local vLLM) ---
+# --- blank classifier ---
+CLASSIFIER="${CLASSIFIER:-llm}"      # llm (one call/note) | label (offline heuristic) | first (offline, DI in 1st blank)
+# --- LLM classifier (OpenAI-compatible; e.g. your local vLLM) -- only used when CLASSIFIER=llm ---
 API="${API:-openai}"                 # openai | vllm | gemini | mock
 API_BASE="${API_BASE:-http://localhost:8000/v1}"
 MODEL="${MODEL:-local}"
@@ -52,9 +54,9 @@ $PYTHON -m src.dataset.prepare.ingest \
     --input "$WORK/mimic_subset.parquet" --name mimic \
     --out-root "$DATA_ROOT" --version 8 --val-frac "$VAL_FRAC"
 
-echo "==== [3/6] inject direct identifiers (LLM classify -> fill by note_id) ===="
+echo "==== [3/6] inject direct identifiers (classifier=$CLASSIFIER -> fill by note_id) ===="
 $PYTHON -m src.dataset.prepare.inject \
-    --splits-root "$DATA_ROOT" --version 8 --classifier llm \
+    --splits-root "$DATA_ROOT" --version 8 --classifier "$CLASSIFIER" \
     --api "$API" --api-base "$API_BASE" --model "$MODEL" ${API_KEY:+--api-key "$API_KEY"} \
     --di-type "$DI_TYPE" --di-rate "$DI_RATE" \
     --output-sft "$DATA_ROOT/sft" --emit-labeled "$WORK/labeled.parquet"
