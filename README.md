@@ -116,18 +116,7 @@ python -m src.dataset.prepare.ingest --input data/mimic_1pct.parquet --name mimi
 
 Then continue with Steps 2–5, or run the whole pipeline (subsample → ingest → inject → train → generate → audit) as one SLURM job — see [Examples](#examples).
 
-<details>
-<summary><b>The paper's original build (canonical splits + personas)</b></summary>
-
-The paper builds the fixed `train/val/test` (plus `train_1`/`val_1`/… subset) splits and its persona set through Hydra, instead of the generic synthetic personas `ingest` makes. **Steps 2–5 are identical**; only how the splits and personas are produced differs. It needs `admissions.csv`/`patients.csv` in `data/raw/` for the demographics.
-
-```bash
-python -m src.dataset.splits.mimic                 # Hydra config src/configs/dataset/mimic.yaml -> data/processed/splits/{train,val,test,...}.parquet
-python src/dataset/pii_insertion/fake_persona.py   # -> splits_filtered_v* + splits_personas_v* (validate with persona_check.py)
-```
-
-*(Optional stats table: `python -m src.dataset.splits.stats_to_latex --splits_dir data/processed/splits --output outputs/splits/stats_table.tex`. To adapt a **different** corpus, replace `src/dataset/splits/mimic.py` with your own splits builder emitting `text`/`subject_id`/`note_id`.)*
-</details>
+*For the paper's exact build — the canonical `train/val/test` splits and demographically-matched personas — and for adapting a **different** corpus, see [Reproducing the paper](#reproducing-the-paper).*
 
 ---
 
@@ -166,7 +155,7 @@ This writes `$DATA_ROOT/sft/{train,val}_0.05.json` (the **SFT datasets** for tra
 
 ## Step 3 — Train
 
-Download a base model and fine-tune directly on the SFT data — **no index, no config files**:
+Download a base model and fine-tune directly on the SFT data:
 
 ```bash
 huggingface-cli download meta-llama/Llama-3.2-1B-Instruct --local-dir models/base/Llama_3.2-1B
@@ -183,8 +172,6 @@ python src/finetuning/finetune.py \
 
 - **Base model** — `--model_name_or_path` takes any Hugging Face causal-LM directory, so to change from Llama just download another model (Qwen, OLMo, a bigger Llama, …) and point at it. Use the **same** base for the audit's `--base-model` (the non-fine-tuned reference). For **multi-GPU FSDP**, the model directory name must contain a family key (`Llama`, `Qwen`, `Olmo`) so `finetune.py`'s `decoding_layers` picks the right decoder layer — add your `<Family>DecoderLayer` there for other architectures (single-GPU training doesn't need it).
 - **Training hyperparameters are not in any config file.** The core ones — learning rate `2e-5`, per-device batch size `1`, gradient accumulation `8`, cosine schedule, `bf16` — are set directly in `finetune.py`'s `TrainingArguments`; edit them there. The CLI exposes `--n_epochs`, `--output_dir`, `--model_max_length`, `--lora`, `--save_total_limit`.
-
-> The MIMIC/paper runs instead drive training from the `index/` registry (`seed_index.py` writes it, `finetune.py --model_id N` reads it). The Hydra YAML under `src/configs/jobs/` (e.g. `submit_finetuning_job_1b_large.yaml`) is read **only** by the SLURM launcher `src/jobs/finetuning/submit_finetuning_job.py` — for orchestration (`n_gpu`, `backend`, which index dataset), **not** the training hyperparameters. Both are optional for a new dataset.
 
 ---
 
@@ -204,7 +191,7 @@ These are the empirical attacker queries used to validate the analytical curves 
 
 ## Step 5 — Audit / estimate leakage
 
-Train the verification classifier and derive the extraction curves. This orchestrator **reuses the evaluation-pipeline pieces directly** — the 5-fold cross-fit verifier (`train_mia_verifier_cv`), the log-likelihood features (`compute_ll_names`), the fold-ensemble scoring of unseen candidates (`compute_scores`), the **extracted-stream FPR ≤ 5%** operating threshold (`compute_threshold_fpr5_extr`), and the closed-form curves (`theory_curves` / `attack_curves`):
+Train the verification classifier (5-fold cross-fit) and derive the extraction curves at the **extracted-stream FPR ≤ 5%** operating threshold:
 
 ```bash
 python -m src.evaluation.audit.from_labels \
@@ -218,26 +205,39 @@ python -m src.evaluation.audit.from_labels \
 
 `outputs/mydata/audit/audit_report.json` reports the verifier AUC and the closed-form **analytical** curves — recall, extracted-stream FPR/TPR vs attacker query budget *Q*, at the operating threshold τ. With `--generations` (Step 4) it adds the measured **experimental** extraction: the full confusion matrix (TP/FP, recall, TPR, FPR, PPV) over the generated candidates with 95% bootstrap CIs, so you can check the analytical curves against experiment at each *Q*. A completion counts as extracting a member only when the name is clean at its start (the paper's position filter, on by default; `--no-position-match` disables it), and `--filter-names` drops non-name junk from the false-positive pool.
 
-<details>
-<summary><b>Paper's index-based evaluation (MIMIC)</b></summary>
-
-The original paper evaluation computes per-name log-likelihood tables from the `index/` + personas via Hydra (`src/configs/evaluation/log_likelihood/eval.yaml`):
-
-```bash
-python -m src.evaluation.pipeline.compute_risk dataset_size=1 model_size=1B output_dir=./outputs/pipeline
-python -m src.evaluation.pipeline.compute_risk_batch          # larger-batch variant
-python -m src.evaluation.pipeline.plot_relative_leakage_risk --dataset 10,100 \
-  --output outputs/plots/relative_leakage.png --top_names_output outputs/plots/top_100_names.csv
-```
-
-These write `ll_train_*.csv` / `ll_all_output_*_batch.csv` under `output_dir` and are MIMIC/index-coupled. For a new dataset, prefer `audit.from_labels` above, which is self-contained.
-</details>
-
 ---
 
 ## Other direct identifiers (MRNs, addresses, …)
 
 Extending to a new direct identifier requires only three things, all captured per type in [`src/dataset/prepare/di_types.py`](src/dataset/prepare/di_types.py): the **query prompt(s)** (e.g. `"MRN: "` instead of `"Name: "`), the **generation length** (an address needs more tokens than a name), and the **parsing method** (extract digits for an MRN, two words for a name). `name`, `attending`, `mrn`, `address`, `phone`, and `email` are built in; pass `--di-type mrn` to the injection (Step 2) and audit (Step 5) steps, or add a `DirectIdentifierType` entry to extend the registry. Nothing else in the pipeline changes.
+
+---
+
+## Reproducing the paper
+
+The paper's runs use an `index/` registry and Hydra configs instead of the flag-driven path above. They're optional — the new-dataset and MIMIC-subset paths never touch them — and kept here for exact reproduction.
+
+- **Canonical splits + demographic personas.** Build the paper's fixed `train/val/test` (+ `train_1`/`val_1`/… subset) splits and demographically-matched personas (from `admissions.csv`/`patients.csv` in `data/raw/`), instead of the generic synthetic personas `ingest` makes — Steps 2–5 are otherwise identical:
+
+  ```bash
+  python -m src.dataset.splits.mimic                 # Hydra config src/configs/dataset/mimic.yaml
+  python src/dataset/pii_insertion/fake_persona.py   # -> splits_filtered_v* + splits_personas_v* (validate with persona_check.py)
+  ```
+
+  *(Optional stats table: `src.dataset.splits.stats_to_latex`. To adapt a different corpus, replace `src/dataset/splits/mimic.py` with your own splits builder emitting `text`/`subject_id`/`note_id`.)*
+
+- **Index-based training.** `seed_index.py` writes the `index/` registry; `finetune.py --model_id N` then reads the base model / dataset / epochs from it (env `INDEX_FOLDER`, default `./index`). The Hydra YAML under `src/configs/jobs/` drives only the SLURM launcher `src/jobs/finetuning/submit_finetuning_job.py` — orchestration (`n_gpu`, backend, which index dataset), not the training hyperparameters.
+
+- **Index-based evaluation.** Per-name log-likelihood tables via Hydra (`src/configs/evaluation/log_likelihood/eval.yaml`), MIMIC/index-coupled (env `OUTPUT_DIR`); for a new dataset prefer the self-contained `from_labels` in [Step 5](#step-5--audit--estimate-leakage):
+
+  ```bash
+  python -m src.evaluation.pipeline.compute_risk dataset_size=1 model_size=1B output_dir=./outputs/pipeline
+  python -m src.evaluation.pipeline.plot_relative_leakage_risk --dataset 10,100 --output outputs/plots/relative_leakage.png
+  ```
+
+- **Gemini injection.** `--api gemini` (Step 2) needs `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION`.
+
+The paper's figure/table/bootstrap analysis scripts live in [`src/evaluation/pipeline/paper/`](src/evaluation/pipeline/paper/) (see its README).
 
 ---
 
@@ -255,11 +255,6 @@ Extending to a new direct identifier requires only three things, all captured pe
 - `src/llm/` — LLM backends for injection: any OpenAI-compatible server (`openai`), plus `gemini`, `vllm`, and an offline `mock`.
 - `src/folder_handler.py`, `index/` — the dataset/model index (placeholder CSVs; `seed_index` writes real ones).
 - `examples/synthetic/` — a ready-made synthetic dataset.
-
-## Legacy pipeline
-
-The legacy env vars are needed **only** to run the paper-specific code: `INDEX_FOLDER` / `OUTPUT_DIR` for index-based training (`finetune.py --model_id`) and the `compute_risk` eval, and `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` for `--api gemini` injection. Both are called out in the collapsibles below; neither the new-dataset nor the MIMIC-subset path uses them.
-
 
 ---
 
