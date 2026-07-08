@@ -40,12 +40,17 @@ BASE_MODEL="${BASE_MODEL:-models/base/Llama_3.2-1B}"
 N_EPOCHS="${N_EPOCHS:-3}"
 K="${K:-100000}"                     # attacker-query completions
 BUDGETS="${BUDGETS:-1e5 1e6}"
+AUDIT_ONLY="${AUDIT_ONLY:-}"         # set to 1 to skip steps 1-5 and re-audit existing $WORK artifacts
 
 export PYTHONPATH="$REPO${PYTHONPATH:+:$PYTHONPATH}"
 export DATA_ROOT="$WORK/processed"
 # finetune.py logs to W&B: run `wandb login` first or set WANDB_MODE=offline.
 # Do NOT set WANDB_DISABLED=true.
 mkdir -p "$WORK"
+
+if [ -n "$AUDIT_ONLY" ]; then
+  echo "==== [audit-only] skipping steps 1-5; re-auditing existing artifacts in $WORK ===="
+else
 
 echo "==== [1/6] subsample MIMIC discharge notes (${FRAC}) ===="
 $PYTHON -m src.dataset.prepare.mimic_subset \
@@ -76,6 +81,8 @@ echo "==== [5/6] generate completions ===="
 $PYTHON -m src.evaluation.pipeline.generate_completions \
     --model-path "$WORK/finetuned" --output "$WORK/completions.parquet" \
     --prompt "Name: " --k "$K" --max-new-tokens 20
+
+fi   # end steps 1-5 (skipped when AUDIT_ONLY=1)
 
 echo "==== [6/6] audit (verifier + extracted-stream FPR + theory & experimental) ===="
 $PYTHON -m src.evaluation.audit.from_labels \
