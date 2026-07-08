@@ -257,7 +257,7 @@ def _confusion(is_member, passed, total_members):
 def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_model,
                         scores_csv, models_dir, out_dir, tau, budgets, value_col="value",
                         seed=42, n_bootstrap=1000, filter_names=False, strict_match=False,
-                        position_match=False):
+                        position_match=True):
     members = {_parse(di, e, strict_match) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 1}
     nonmembers = {_parse(di, e, strict_match) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 0}
     total = len(members)
@@ -521,10 +521,12 @@ def main():
     parser.add_argument("--strict-match", action="store_true",
                         help="Match generated candidates to members with EXACT case (skip .title()), "
                              "so extraction uses the same string that pi=exp(LL) is computed for")
-    parser.add_argument("--position-match", action="store_true",
-                        help="Count a completion as an extraction only when the name is at index 1 "
-                             "(a clean ' First Last' right after the prompt), as the paper's "
+    parser.add_argument("--position-match", dest="position_match", action="store_true", default=True,
+                        help="(default) count a completion as an extraction only when the name is at "
+                             "index 1 (a clean ' First Last' right after the prompt), as the paper's "
                              "ner_ll_remaining does; aligns experimental coverage with pi")
+    parser.add_argument("--no-position-match", dest="position_match", action="store_false",
+                        help="disable the idx==1 filter (count the first two words of every completion)")
     parser.add_argument("--output-dir", default="outputs/audit")
     args = parser.parse_args()
     run(args)
