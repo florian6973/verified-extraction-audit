@@ -17,6 +17,7 @@ class FakePersonas:
         self.default_language = 'en'
         self.unique_names = set()
         self.physicians = []
+        self._lang_cache = {}
 
     def create_physicians(self, n_physicians): # reset physician between datasets
         self.physicians = []
@@ -27,17 +28,21 @@ class FakePersonas:
         print(f"Created {len(self.physicians)} physicians")
 
     def _simplify_language(self, language):
+        # Cache per unique input: langcodes.find() is deterministic and, when the
+        # optional `language_data` package is missing, prints a one-line install
+        # hint every call — caching keeps that to once per distinct language.
+        if language in self._lang_cache:
+            return self._lang_cache[language]
         try:
-            language = str(langcodes.find(language))
-            if language == 'enc':
-                language = 'en'
-            # print(language)
-            if language != "None":
-                return language
-            else:
-                return self.default_language
-        except Exception as e:
-            return self.default_language
+            simplified = str(langcodes.find(language))
+            if simplified == 'enc':
+                simplified = 'en'
+            if simplified == "None":
+                simplified = self.default_language
+        except Exception:
+            simplified = self.default_language
+        self._lang_cache[language] = simplified
+        return simplified
 
     def _get_faker(self, language):
         try:

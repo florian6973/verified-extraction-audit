@@ -68,6 +68,8 @@ class FinetuningArguments:
     lora: bool = field(default=False, metadata={"help": "Enable LoRA (Low-Rank Adaptation) for parameter-efficient fine-tuning (not recommended)"})
     ppl: bool = field(default=False, metadata={"help": "Compute perplexity on evaluation set instead of training"})
     n_epochs: int = field(default=1, metadata={"help": "Number of training epochs"})
+    learning_rate: float = field(default=2e-5, metadata={"help": "Optimizer learning rate (paper default 2e-5)"})
+    gradient_accumulation_steps: int = field(default=8, metadata={"help": "Gradient accumulation steps (paper default 8)"})
     save_total_limit: int = field(default=20, metadata={"help": "Maximum number of model checkpoints to keep during training"})
 
 def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
@@ -354,13 +356,13 @@ def finetune():
         num_train_epochs=ft_args.n_epochs,
         per_device_eval_batch_size=1,
         per_device_train_batch_size=1,
-        gradient_accumulation_steps=8,
+        gradient_accumulation_steps=ft_args.gradient_accumulation_steps,
         eval_strategy="epoch",
         save_strategy="epoch",
         # save_strategy="steps",
         # save_steps=20,
         save_total_limit=ft_args.save_total_limit,
-        learning_rate=2e-5,
+        learning_rate=ft_args.learning_rate,
         weight_decay=0,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",

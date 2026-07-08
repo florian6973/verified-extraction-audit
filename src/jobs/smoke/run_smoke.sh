@@ -10,7 +10,7 @@
 #   SCENARIO=2          : notes with identifiers already embedded + a labeled set
 #                         (as a user would bring to audit a real corpus) -> SFT.
 #
-# Shared: build tiny model -> seed index -> train -> generate completions -> audit.
+# Shared: build tiny model -> train (direct) -> generate completions -> audit.
 # Override any knob via environment variables (see defaults below).
 set -euo pipefail
 
@@ -22,7 +22,13 @@ PYTHON="${PYTHON:-python}"
 SCENARIO="${SCENARIO:-1}"
 WORK="${WORK:-$REPO/outputs/smoke/scenario$SCENARIO}"
 N_SUBJECTS="${N_SUBJECTS:-60}"
-N_EPOCHS="${N_EPOCHS:-1}"
+# The tiny model is randomly initialized, so to *demonstrate* leakage it has to
+# overfit the ~50 injected names. With grad_accum=1 + a higher lr, one epoch is
+# ~50 optimizer steps, so ~30 epochs (~1.5k steps) memorizes them in seconds.
+# (The paper defaults — lr 2e-5, grad_accum 8 — are for real pretrained models.)
+N_EPOCHS="${N_EPOCHS:-30}"
+LR="${LR:-1e-3}"
+GRAD_ACCUM="${GRAD_ACCUM:-1}"
 N_SAMPLES="${N_SAMPLES:-1000}"          # number of attacker-query completions
 BUDGETS="${BUDGETS:-100 1000}"          # query budgets Q for the extraction curves
 TOKENIZER="${TOKENIZER:-gpt2}"
@@ -66,7 +72,8 @@ echo "==== train (finetune.py, direct — no index) ===="
 $PYTHON "$REPO/src/finetuning/finetune.py" \
     --model_name_or_path "$WORK/models/base/Llama_tiny" \
     --dataset_path "$SFT_TRAIN" \
-    --output_dir "$WORK/models/finetuned" --n_epochs "$N_EPOCHS"
+    --output_dir "$WORK/models/finetuned" --n_epochs "$N_EPOCHS" \
+    --learning_rate "$LR" --gradient_accumulation_steps "$GRAD_ACCUM"
 
 echo "==== generate completions (attacker queries) ===="
 $PYTHON -m src.evaluation.pipeline.generate_completions \
