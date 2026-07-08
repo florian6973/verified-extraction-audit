@@ -128,10 +128,30 @@ def theoretical_report(scores_p_csv, pi_col, budgets, tau):
 
 
 # --------------------------------------------------------------------------- #
+# Extracted-stream confusion matrix (positive = injected member; negative = every
+# other candidate). Matches paper/mia/bootstrap_metrics (y_true = groundtruth ==
+# 'train'). ``is_member`` / ``passed`` are boolean arrays over the same candidates.
+# --------------------------------------------------------------------------- #
+def _confusion(is_member, passed, total_members):
+    tp = int((is_member & passed).sum())
+    fp = int((~is_member & passed).sum())
+    fn = int((is_member & ~passed).sum())
+    tn = int((~is_member & ~passed).sum())
+    return {
+        "tp": tp, "fp": fp, "fn": fn, "tn": tn,
+        "tpr": tp / (tp + fn) if (tp + fn) else None,      # recall on generated members
+        "fpr": fp / (fp + tn) if (fp + tn) else None,      # non-members flagged / all non-members
+        "ppv": tp / (tp + fp) if (tp + fp) else None,      # precision of the verified stream
+        "recall_with_verification": tp / total_members if total_members else None,
+    }
+
+
+# --------------------------------------------------------------------------- #
 # Experimental measurement (reuses compute_scores fold ensemble).
 # --------------------------------------------------------------------------- #
 def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_model,
-                        scores_csv, models_dir, out_dir, tau, budgets, value_col="value"):
+                        scores_csv, models_dir, out_dir, tau, budgets, value_col="value",
+                        seed=42, n_bootstrap=1000):
     members = {parse_candidate(di, e) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 1}
     nonmembers = {parse_candidate(di, e) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 0}
     total = len(members)
@@ -158,60 +178,82 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
         for v, s in zip(scored["value"], scored["score_oof_member_proba"]):
             score_of[v] = float(s) if pd.notna(s) else 0.0
 
-    # First-seen query index for EVERY unique candidate (not just members), so we
-    # can build the extracted-stream confusion at any budget Q.
+    # First-seen query index for EVERY unique candidate, so we can build the full
+    # extracted-stream confusion matrix at any budget Q.
     first_seen = {}
     for i, c in enumerate(gen_cands):
         if c not in first_seen:
             first_seen[c] = i
     n_gen = len(gens_df)
 
-    def verified(c):
-        return score_of.get(c, 0.0) >= tau
+    # Vectors over all unique candidates (aligned by index). Positive class = an
+    # injected identifier (a member); NEGATIVE = every other candidate — labeled
+    # non-members AND unlabeled 'other' — matching the paper's bootstrap_metrics
+    # (y_true = groundtruth == 'train'; negatives = 'val' + 'other'). The verifier
+    # was run on every completion, so a non-member passing tau is a false positive.
+    uniq_all = list(first_seen.keys())
+    idx_arr = np.array([first_seen[c] for c in uniq_all])
+    is_member = np.array([c in members for c in uniq_all], dtype=bool)
+    passed = np.array([score_of.get(c, 0.0) >= tau for c in uniq_all], dtype=bool)
+    rng = np.random.default_rng(seed)
 
-    # Experimental budgets can't exceed the number of queries actually run, so cap
-    # each Q at n_gen and drop duplicates (this is why a raw 1e6 row was identical
-    # to 1e5 when only 1e5 completions exist). Theory extrapolates; experiment can't.
+    def _ci(a):
+        return [round(float(np.percentile(a, 2.5)), 6), round(float(np.percentile(a, 97.5)), 6)]
+
+    def _safe(num, den):
+        return round(num / den, 6) if den else None
+
+    # Experimental budgets can't exceed the queries actually run, so cap each Q at
+    # n_gen and drop duplicates (a raw 1e6 row was identical to 1e5 with only 1e5
+    # completions). Theory extrapolates; experiment can't.
     curves, seen_budgets = [], set()
     for Q in budgets:
         Qi = min(int(Q), n_gen)
         if Qi in seen_budgets:
             continue
         seen_budgets.add(Qi)
-        in_stream = [c for c, idx in first_seen.items() if idx < Qi]
-        mem = [c for c in in_stream if c in members]       # injected identifiers regenerated
-        non = [c for c in in_stream if c in nonmembers]    # labeled non-members regenerated
-        tp = sum(verified(c) for c in mem)                 # members that also pass the verifier
-        fp = sum(verified(c) for c in non)                 # labeled non-members passing the verifier
-        n_verified_stream = sum(verified(c) for c in in_stream)  # everything passing (incl. 'other')
+        sel = idx_arr < Qi
+        yt, yp = is_member[sel], passed[sel]
+        n = int(sel.sum())
+        m = _confusion(yt, yp, total)
+        # 95% bootstrap CIs by resampling the in-stream candidates with replacement.
+        tprs, fprs, ppvs, recs = [], [], [], []
+        for _ in range(n_bootstrap if n else 0):
+            s = rng.integers(0, n, n)
+            bm = _confusion(yt[s], yp[s], total)
+            tprs.append(bm["tpr"] or 0.0)
+            fprs.append(bm["fpr"] or 0.0)
+            ppvs.append(bm["ppv"] or 0.0)
+            recs.append(bm["recall_with_verification"] or 0.0)
         curves.append({
             "Q": float(Qi),
-            # recall = members recovered / all injected members
-            "recall_without_verification": round(len(mem) / total, 6),
-            "recall_with_verification": round(tp / total, 6),
-            "extracted_members": len(mem),
-            "tp": int(tp),
-            "fp_labeled": int(fp),
-            "n_members_generated": len(mem),
-            "n_nonmembers_generated": len(non),
-            # verifier TPR/FPR on the *generated* labeled sets (mirrors theory's
-            # extracted_tpr/fpr). fpr is often ~0/None: the model rarely regenerates
-            # non-members it never trained on, so few land in the stream.
-            "tpr_extracted": round(tp / len(mem), 6) if mem else None,
-            "fpr_extracted": round(fp / len(non), 6) if non else None,
-            "ppv_labeled": round(tp / (tp + fp), 6) if (tp + fp) else None,
-            # operational precision over the FULL verified stream (members vs every
-            # other candidate the verifier approves) — the attacker's real hit rate.
-            "n_verified_stream": int(n_verified_stream),
-            "ppv_stream": round(tp / n_verified_stream, 6) if n_verified_stream else None,
+            "n_candidates": n,
+            "n_members_generated": int(yt.sum()),
+            # Full confusion matrix (positive = injected member, negative = all others).
+            "tp": m["tp"], "fp": m["fp"], "fn": m["fn"], "tn": m["tn"],
+            "tpr": round(m["tpr"], 6) if m["tpr"] is not None else None,   # recall on generated members
+            "fpr": round(m["fpr"], 6) if m["fpr"] is not None else None,   # non-members flagged / all non-members
+            "ppv": round(m["ppv"], 6) if m["ppv"] is not None else None,   # precision of the verified stream
+            # Extraction recall over ALL injected members (fixed denominator).
+            "recall_without_verification": _safe(int(yt.sum()), total),
+            "recall_with_verification": (round(m["recall_with_verification"], 6)
+                                         if m["recall_with_verification"] is not None else None),
+            "tpr_ci95": _ci(tprs) if tprs else None,
+            "fpr_ci95": _ci(fprs) if fprs else None,
+            "ppv_ci95": _ci(ppvs) if ppvs else None,
+            "recall_with_verification_ci95": _ci(recs) if recs else None,
         })
-    members_generated = sum(1 for c in first_seen if c in members)
     return {"n_generations": int(n_gen),
-            "unique_members_extracted": int(members_generated),
+            "unique_candidates": len(uniq_all),
+            "unique_members_extracted": int(is_member.sum()),
             "total_members": total,
-            "note": ("Experimental budgets are capped at n_generations; fpr_extracted/ppv_labeled "
-                     "use only labeled non-members that were regenerated (usually few), so ppv_stream "
-                     "is the more meaningful precision over the full extraction stream."),
+            "n_bootstrap": int(n_bootstrap),
+            "note": ("Confusion matrix over ALL unique generated candidates: positive = injected "
+                     "member ('train'), negative = every other candidate (labeled non-members + "
+                     "unlabeled 'other'), matching paper/mia/bootstrap_metrics. fpr = FP/(FP+TN) "
+                     "over all non-members; tpr = TP/(TP+FN) over generated members; "
+                     "recall_with_verification = TP/total_members. CIs are 95% bootstrap. To match "
+                     "the paper's language-filtered numbers, drop non-name junk first (--filter-names)."),
             "curves": curves}
 
 
@@ -263,12 +305,20 @@ def run(args):
     print("[audit] 4/5 theoretical curves...", flush=True)
     theo, theo_inf = theoretical_report(scores_p_csv, pi_col, args.budgets, tau)
 
+    # Verifier discrimination on the labeled set (OOF) — the audit's headline number.
+    try:
+        from sklearn.metrics import roc_auc_score
+        verifier_auc = round(float(roc_auc_score(df_scores["y_true"], df_scores["score_oof_member_proba"])), 6)
+    except Exception:
+        verifier_auc = None
+
     report = {
         "di_type": di.name,
         "prompts": prompts,
         "n_members": int((labeled["label"] == 1).sum()),
         "n_non_members": int((labeled["label"] == 0).sum()),
         "feature_columns": feat_cols,
+        "verifier_auc": verifier_auc,
         "operating_point": {"target_fpr": args.target_fpr, "fpr_budget": float(fpr_budget),
                             "tau_extracted_fpr": tau},
         "extraction_theoretical": theo,
@@ -282,7 +332,8 @@ def run(args):
                    else pd.read_csv(args.generations))
         report["extraction_experimental"] = experimental_report(
             gens_df, labeled, di, prompts, args.base_model, args.finetuned_model,
-            scores_csv, models_dir, args.output_dir, tau, args.budgets)
+            scores_csv, models_dir, args.output_dir, tau, args.budgets,
+            seed=args.seed, n_bootstrap=args.bootstrap)
 
     out = os.path.join(args.output_dir, "audit_report.json")
     with open(out, "w") as f:
@@ -307,6 +358,8 @@ def main():
     parser.add_argument("--generations", default=None,
                         help="Completions parquet/csv (from generate_completions.py) for the experimental curves")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--bootstrap", type=int, default=1000,
+                        help="Bootstrap resamples for experimental metric 95%% CIs (0 to disable)")
     parser.add_argument("--output-dir", default="outputs/audit")
     args = parser.parse_args()
     run(args)
