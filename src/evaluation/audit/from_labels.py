@@ -160,25 +160,60 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
         for v, s in zip(scored["value"], scored["score_oof_member_proba"]):
             score_of[v] = float(s) if pd.notna(s) else 0.0
 
+    # First-seen query index for EVERY unique candidate (not just members), so we
+    # can build the extracted-stream confusion at any budget Q.
     first_seen = {}
     for i, c in enumerate(gen_cands):
-        if c in members and c not in first_seen:
+        if c not in first_seen:
             first_seen[c] = i
+    n_gen = len(gens_df)
 
-    curves = []
+    def verified(c):
+        return score_of.get(c, 0.0) >= tau
+
+    # Experimental budgets can't exceed the number of queries actually run, so cap
+    # each Q at n_gen and drop duplicates (this is why a raw 1e6 row was identical
+    # to 1e5 when only 1e5 completions exist). Theory extrapolates; experiment can't.
+    curves, seen_budgets = [], set()
     for Q in budgets:
-        Qi = int(Q)
-        found = [m for m, idx in first_seen.items() if idx < Qi]
-        found_verif = [m for m in found if score_of.get(m, 0.0) >= tau]
+        Qi = min(int(Q), n_gen)
+        if Qi in seen_budgets:
+            continue
+        seen_budgets.add(Qi)
+        in_stream = [c for c, idx in first_seen.items() if idx < Qi]
+        mem = [c for c in in_stream if c in members]       # injected identifiers regenerated
+        non = [c for c in in_stream if c in nonmembers]    # labeled non-members regenerated
+        tp = sum(verified(c) for c in mem)                 # members that also pass the verifier
+        fp = sum(verified(c) for c in non)                 # labeled non-members passing the verifier
+        n_verified_stream = sum(verified(c) for c in in_stream)  # everything passing (incl. 'other')
         curves.append({
-            "Q": float(Q),
-            "recall_with_verification": round(len(found_verif) / total, 6),
-            "recall_without_verification": round(len(found) / total, 6),
-            "extracted_members": len(found),
+            "Q": float(Qi),
+            # recall = members recovered / all injected members
+            "recall_without_verification": round(len(mem) / total, 6),
+            "recall_with_verification": round(tp / total, 6),
+            "extracted_members": len(mem),
+            "tp": int(tp),
+            "fp_labeled": int(fp),
+            "n_members_generated": len(mem),
+            "n_nonmembers_generated": len(non),
+            # verifier TPR/FPR on the *generated* labeled sets (mirrors theory's
+            # extracted_tpr/fpr). fpr is often ~0/None: the model rarely regenerates
+            # non-members it never trained on, so few land in the stream.
+            "tpr_extracted": round(tp / len(mem), 6) if mem else None,
+            "fpr_extracted": round(fp / len(non), 6) if non else None,
+            "ppv_labeled": round(tp / (tp + fp), 6) if (tp + fp) else None,
+            # operational precision over the FULL verified stream (members vs every
+            # other candidate the verifier approves) — the attacker's real hit rate.
+            "n_verified_stream": int(n_verified_stream),
+            "ppv_stream": round(tp / n_verified_stream, 6) if n_verified_stream else None,
         })
-    return {"n_generations": int(len(gens_df)),
-            "unique_members_extracted": len(first_seen),
+    members_generated = sum(1 for c in first_seen if c in members)
+    return {"n_generations": int(n_gen),
+            "unique_members_extracted": int(members_generated),
             "total_members": total,
+            "note": ("Experimental budgets are capped at n_generations; fpr_extracted/ppv_labeled "
+                     "use only labeled non-members that were regenerated (usually few), so ppv_stream "
+                     "is the more meaningful precision over the full extraction stream."),
             "curves": curves}
 
 
