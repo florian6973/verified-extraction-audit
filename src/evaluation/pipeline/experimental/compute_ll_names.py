@@ -65,6 +65,50 @@ def compute_name_ll(prompt, name, tok, model, device):
     return lp, n_tokens, list_tokens, list_log_probs
 
 
+@torch.no_grad()
+def compute_name_ll_batch(prompt, names, tok, model, device, batch_size=64, desc=None):
+    """Batched equivalent of ``compute_name_ll(prompt, name, ...)[0]`` for many names.
+
+    Returns a list of log-likelihoods (one per name), numerically matching the
+    per-name function but 1-2 orders of magnitude faster on GPU. Uses **right**
+    padding so real tokens start at position 0 — the same layout the per-name code
+    assumes — and masks padding via the attention mask (a causal model's real
+    tokens never attend to trailing pad, so their logits are unchanged).
+    """
+    full_prefix = prompt.rstrip()
+    prompt_len = tok(full_prefix, return_tensors="pt")["input_ids"].shape[1]
+    if tok.pad_token is None:
+        tok.pad_token = tok.eos_token
+    prev_side = tok.padding_side
+    tok.padding_side = "right"
+    out = []
+    pbar = tqdm(total=len(names), desc=desc, unit="name") if desc else None
+    try:
+        for start in range(0, len(names), batch_size):
+            chunk = names[start:start + batch_size]
+            texts = [full_prefix + " " + str(n) for n in chunk]
+            enc = tok(texts, return_tensors="pt", padding=True).to(device)
+            input_ids, attn = enc["input_ids"], enc["attention_mask"]
+            log_probs = torch.log_softmax(
+                model(input_ids, attention_mask=attn, use_cache=False).logits, dim=-1)
+            lengths = attn.sum(dim=1)
+            for b in range(input_ids.shape[0]):
+                L = int(lengths[b].item())
+                if L > prompt_len:
+                    pos = torch.arange(prompt_len - 1, L - 1, device=device)
+                    tgt = input_ids[b, prompt_len:L]
+                    out.append(log_probs[b, pos, tgt].sum().item())
+                else:
+                    out.append(0.0)
+            if pbar is not None:
+                pbar.update(len(chunk))
+    finally:
+        tok.padding_side = prev_side
+        if pbar is not None:
+            pbar.close()
+    return out
+
+
 def compute_ll_for_all_names(input_file, output_file):
     """
     Compute ll for all names using both base and finetuned models,

@@ -36,10 +36,9 @@ import os
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from src.dataset.prepare.di_types import get_di_type, parse_candidate
-from src.evaluation.pipeline.experimental.compute_ll_names import compute_name_ll, load_model
+from src.evaluation.pipeline.experimental.compute_ll_names import compute_name_ll_batch, load_model
 from src.evaluation.pipeline.experimental.mia.train_mia_verifier_cv import train_crossfit_and_save
 from src.evaluation.pipeline.experimental.mia.ll_to_prob import convert_all_ll_to_prob
 from src.evaluation.pipeline.experimental.mia.compute_scores import compute_scores
@@ -52,32 +51,31 @@ DEFAULT_BUDGETS = [1e5, 1e6]
 # --------------------------------------------------------------------------- #
 # Feature extraction (reuses compute_ll_names.compute_name_ll / load_model)
 # --------------------------------------------------------------------------- #
-def _features_for(values, model_path, prompts, prefix, label=""):
-    """{f'{prefix}{prompt}': [LL per value]} for one model, via compute_name_ll.
+def _features_for(values, model_path, prompts, prefix, label="", batch_size=64):
+    """{f'{prefix}{prompt}': [LL per value]} for one model, via compute_name_ll_batch.
 
-    LLs are computed one value at a time, so for large candidate sets (e.g. the
-    ~K generated completions) this is the slow part — a tqdm bar per prompt makes
-    the progress visible instead of silent.
+    LLs are computed in batches (right-padded), which is 1-2 orders of magnitude
+    faster than one-name-at-a-time on the ~K generated candidates; a tqdm bar per
+    prompt keeps the progress visible.
     """
     tok, model, device = load_model(model_path)
     cols = {}
     for prompt in prompts:
-        cols[f"{prefix}{prompt}"] = [
-            compute_name_ll(prompt, str(v), tok, model, device)[0]
-            for v in tqdm(values, desc=f"LL {label}{prefix}{prompt}", unit="name")
-        ]
+        cols[f"{prefix}{prompt}"] = compute_name_ll_batch(
+            prompt, values, tok, model, device, batch_size=batch_size,
+            desc=f"LL {label}{prefix}{prompt}")
     del tok, model
     return cols
 
 
-def build_feature_frame(values, base_model, finetuned_model, prompts, label=""):
+def build_feature_frame(values, base_model, finetuned_model, prompts, label="", batch_size=64):
     """DataFrame with value + ft_<prompt> (finetuned) + qi_<prompt> (base).
 
     Runs 4 LL passes over ``values`` (finetuned/base x each prompt); ``label``
     tags the progress bars so labeled-set vs generation passes are distinguishable.
     """
-    ft = _features_for(values, finetuned_model, prompts, "ft_", label)
-    qi = _features_for(values, base_model, prompts, "qi_", label)
+    ft = _features_for(values, finetuned_model, prompts, "ft_", label, batch_size)
+    qi = _features_for(values, base_model, prompts, "qi_", label, batch_size)
     return pd.DataFrame({"value": list(values), **ft, **qi})
 
 
