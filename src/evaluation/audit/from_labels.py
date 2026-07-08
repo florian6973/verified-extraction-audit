@@ -147,6 +147,20 @@ def _looks_like_name(s):
     return bool(re.sub(r'[^A-Za-z]', '', toks[0])) and bool(re.sub(r'[^A-Za-z]', '', toks[1]))
 
 
+def _parse(di, s, strict=False):
+    """Parse a raw string to its identifier value.
+
+    Default is the DI type's parser (for names: first two words, dots stripped,
+    ``.title()``-cased). With ``strict`` and a name-type DI, the ``.title()``
+    case-fold is skipped, so a generated candidate only matches a member when the
+    casing is identical — i.e. matching uses the exact string that pi = exp(LL) is
+    computed for. This isolates whether case normalization is inflating coverage.
+    """
+    if strict and di.parse_strategy == "first_two_words":
+        return " ".join(str(s).strip().split()[:2]).replace(".", "").strip()
+    return parse_candidate(di, s)
+
+
 # --------------------------------------------------------------------------- #
 # Extracted-stream confusion matrix (positive = injected member; negative = every
 # other candidate). Matches paper/mia/bootstrap_metrics (y_true = groundtruth ==
@@ -171,14 +185,14 @@ def _confusion(is_member, passed, total_members):
 # --------------------------------------------------------------------------- #
 def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_model,
                         scores_csv, models_dir, out_dir, tau, budgets, value_col="value",
-                        seed=42, n_bootstrap=1000, filter_names=False):
-    members = {parse_candidate(di, e) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 1}
-    nonmembers = {parse_candidate(di, e) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 0}
+                        seed=42, n_bootstrap=1000, filter_names=False, strict_match=False):
+    members = {_parse(di, e, strict_match) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 1}
+    nonmembers = {_parse(di, e, strict_match) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 0}
     total = len(members)
     if total == 0 or value_col not in gens_df.columns:
         return None
 
-    gen_cands = [parse_candidate(di, str(v)) for v in gens_df[value_col].tolist()]
+    gen_cands = [_parse(di, str(v), strict_match) for v in gens_df[value_col].tolist()]
     uniq = list(dict.fromkeys(gen_cands))  # order-preserving unique
 
     # Features for candidates, then ensemble-score via compute_scores (score_unseen).
@@ -270,6 +284,7 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
         })
     return {"n_generations": int(n_gen),
             "unique_candidates": len(uniq_all),
+            "strict_match": bool(strict_match),
             "name_filter_applied": bool(filter_names),
             "unique_candidates_before_filter": int(n_before_filter),
             "unique_members_extracted": int(is_member.sum()),
@@ -292,8 +307,9 @@ def run(args):
 
     labeled = pd.read_parquet(args.labeled)
     labeled["label"] = labeled["label"].astype(int)
-    # Normalize entries through the same parser used on completions.
-    labeled["value"] = [parse_candidate(di, e) for e in labeled["entry"]]
+    # Normalize entries through the same parser used on completions (so pi and the
+    # extraction match use the identical string; --strict-match keeps exact case).
+    labeled["value"] = [_parse(di, e, args.strict_match) for e in labeled["entry"]]
 
     # 1) Features -> df_combined.csv (columns the verifier expects)
     print(f"[audit] 1/5 verifier features for {len(labeled)} labeled entries...", flush=True)
@@ -360,7 +376,8 @@ def run(args):
         report["extraction_experimental"] = experimental_report(
             gens_df, labeled, di, prompts, args.base_model, args.finetuned_model,
             scores_csv, models_dir, args.output_dir, tau, args.budgets,
-            seed=args.seed, n_bootstrap=args.bootstrap, filter_names=args.filter_names)
+            seed=args.seed, n_bootstrap=args.bootstrap, filter_names=args.filter_names,
+            strict_match=args.strict_match)
 
     out = os.path.join(args.output_dir, "audit_report.json")
     with open(out, "w") as f:
@@ -390,6 +407,9 @@ def main():
     parser.add_argument("--filter-names", action="store_true",
                         help="Drop non-name junk (de-id ___ placeholders, digits, punctuation) from "
                              "generated candidates before the confusion matrix, so it doesn't inflate FP")
+    parser.add_argument("--strict-match", action="store_true",
+                        help="Match generated candidates to members with EXACT case (skip .title()), "
+                             "so extraction uses the same string that pi=exp(LL) is computed for")
     parser.add_argument("--output-dir", default="outputs/audit")
     args = parser.parse_args()
     run(args)

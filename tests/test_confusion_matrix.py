@@ -6,7 +6,20 @@ the bug where FPR was computed over only the labeled non-members (usually ~0).
 
 import numpy as np
 
-from src.evaluation.audit.from_labels import _confusion, _looks_like_name
+from src.dataset.prepare.di_types import get_di_type
+from src.evaluation.audit.from_labels import _confusion, _looks_like_name, _parse
+
+
+def test_strict_parse_preserves_case():
+    di = get_di_type("name")
+    # default: .title() collapses casings -> both map to the same member
+    assert _parse(di, "donald walker", strict=False) == "Donald Walker"
+    assert _parse(di, "DONALD WALKER", strict=False) == "Donald Walker"
+    # strict: exact case preserved -> lowercase no longer matches "Donald Walker"
+    assert _parse(di, "donald walker", strict=True) == "donald walker"
+    assert _parse(di, "Donald Walker", strict=True) == "Donald Walker"
+    # both take first two words and strip dots
+    assert _parse(di, "Amy Romero from ED", strict=True) == "Amy Romero"
 
 
 def test_name_filter_drops_junk_keeps_names():
