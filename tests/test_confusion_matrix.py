@@ -6,7 +6,21 @@ the bug where FPR was computed over only the labeled non-members (usually ~0).
 
 import numpy as np
 
-from src.evaluation.audit.from_labels import _confusion
+from src.evaluation.audit.from_labels import _confusion, _looks_like_name
+
+
+def test_name_filter_drops_junk_keeps_names():
+    # real names survive
+    assert _looks_like_name("Donald Walker")
+    assert _looks_like_name("Margaret Johnson")
+    # de-id placeholders / junk dropped
+    assert not _looks_like_name("___ ___")
+    assert not _looks_like_name("___ Unit")
+    assert not _looks_like_name("Super 8")        # digit
+    assert not _looks_like_name("Walker")          # single token
+    assert not _looks_like_name("Dr. Smith, MD")   # comma
+    assert not _looks_like_name("")
+    assert not _looks_like_name(None)
 
 
 def test_members_vs_all_others():

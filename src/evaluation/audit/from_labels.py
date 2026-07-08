@@ -33,6 +33,7 @@ Example
 import argparse
 import json
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -128,6 +129,25 @@ def theoretical_report(scores_p_csv, pi_col, budgets, tau):
 
 
 # --------------------------------------------------------------------------- #
+# Lightweight name filter (the structural part of paper/mia/name_mask, without the
+# first-name gazetteer): drop de-identification placeholders and obvious non-names
+# so they don't inflate the false-positive count. The paper's full filter also
+# requires a known first name — see paper/mia/name_filter.py for exact parity.
+# --------------------------------------------------------------------------- #
+_NAME_JUNK = set('_,"\'()#/:$0123456789\n\t')
+
+
+def _looks_like_name(s):
+    """True if ``s`` looks like a 'First Last' name (>=2 alphabetic tokens, no junk)."""
+    if not isinstance(s, str) or any(ch in _NAME_JUNK for ch in s):
+        return False
+    toks = s.split()
+    if len(toks) < 2:
+        return False
+    return bool(re.sub(r'[^A-Za-z]', '', toks[0])) and bool(re.sub(r'[^A-Za-z]', '', toks[1]))
+
+
+# --------------------------------------------------------------------------- #
 # Extracted-stream confusion matrix (positive = injected member; negative = every
 # other candidate). Matches paper/mia/bootstrap_metrics (y_true = groundtruth ==
 # 'train'). ``is_member`` / ``passed`` are boolean arrays over the same candidates.
@@ -151,7 +171,7 @@ def _confusion(is_member, passed, total_members):
 # --------------------------------------------------------------------------- #
 def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_model,
                         scores_csv, models_dir, out_dir, tau, budgets, value_col="value",
-                        seed=42, n_bootstrap=1000):
+                        seed=42, n_bootstrap=1000, filter_names=False):
     members = {parse_candidate(di, e) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 1}
     nonmembers = {parse_candidate(di, e) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 0}
     total = len(members)
@@ -192,6 +212,11 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
     # (y_true = groundtruth == 'train'; negatives = 'val' + 'other'). The verifier
     # was run on every completion, so a non-member passing tau is a false positive.
     uniq_all = list(first_seen.keys())
+    n_before_filter = len(uniq_all)
+    if filter_names:
+        # Drop de-id placeholders / non-name junk so they don't inflate FP (as the
+        # paper does with name_mask). Members are real names, so they survive.
+        uniq_all = [c for c in uniq_all if _looks_like_name(c)]
     idx_arr = np.array([first_seen[c] for c in uniq_all])
     is_member = np.array([c in members for c in uniq_all], dtype=bool)
     passed = np.array([score_of.get(c, 0.0) >= tau for c in uniq_all], dtype=bool)
@@ -245,6 +270,8 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
         })
     return {"n_generations": int(n_gen),
             "unique_candidates": len(uniq_all),
+            "name_filter_applied": bool(filter_names),
+            "unique_candidates_before_filter": int(n_before_filter),
             "unique_members_extracted": int(is_member.sum()),
             "total_members": total,
             "n_bootstrap": int(n_bootstrap),
@@ -333,7 +360,7 @@ def run(args):
         report["extraction_experimental"] = experimental_report(
             gens_df, labeled, di, prompts, args.base_model, args.finetuned_model,
             scores_csv, models_dir, args.output_dir, tau, args.budgets,
-            seed=args.seed, n_bootstrap=args.bootstrap)
+            seed=args.seed, n_bootstrap=args.bootstrap, filter_names=args.filter_names)
 
     out = os.path.join(args.output_dir, "audit_report.json")
     with open(out, "w") as f:
@@ -360,6 +387,9 @@ def main():
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--bootstrap", type=int, default=1000,
                         help="Bootstrap resamples for experimental metric 95%% CIs (0 to disable)")
+    parser.add_argument("--filter-names", action="store_true",
+                        help="Drop non-name junk (de-id ___ placeholders, digits, punctuation) from "
+                             "generated candidates before the confusion matrix, so it doesn't inflate FP")
     parser.add_argument("--output-dir", default="outputs/audit")
     args = parser.parse_args()
     run(args)
