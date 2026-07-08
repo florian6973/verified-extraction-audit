@@ -30,9 +30,13 @@ set -euo pipefail
 
 # --- environment (edit to match your cluster) ---
 CONDA_ENV="${CONDA_ENV:-clinical-exposure}"
-CUDA_MODULE="${CUDA_MODULE:-cuda/12.4.0}"
+CUDA_MODULE="${CUDA_MODULE:-cuda/12.4}"
 
-REPO="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." && pwd)"
+# Under SLURM the batch script runs from a spool copy, so BASH_SOURCE/$0 are NOT
+# the repo path — use SLURM_SUBMIT_DIR (the dir you ran `sbatch` from = repo root).
+# Submit from the repo root: `cd <repo> && sbatch src/jobs/smoke/smoke_test.slurm`.
+REPO="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../../.." && pwd)}"
+export REPO
 cd "$REPO"
 
 # Best-effort module + conda activation (skip cleanly if unavailable).
