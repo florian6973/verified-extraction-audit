@@ -16,9 +16,11 @@ Example
 import argparse
 
 
-def build(out_dir, tokenizer_name, hidden_size, layers, heads, max_pos):
+def build(out_dir, tokenizer_name, hidden_size, layers, heads, max_pos, seed=42):
+    import torch
     from transformers import AutoTokenizer, LlamaConfig, LlamaForCausalLM
 
+    torch.manual_seed(seed)  # reproducible random init
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name, use_fast=False)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -52,8 +54,9 @@ def main():
     parser.add_argument("--layers", type=int, default=2)
     parser.add_argument("--heads", type=int, default=4)
     parser.add_argument("--max-pos", type=int, default=2048)
+    parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args()
-    build(args.out, args.tokenizer, args.hidden_size, args.layers, args.heads, args.max_pos)
+    build(args.out, args.tokenizer, args.hidden_size, args.layers, args.heads, args.max_pos, args.seed)
 
 
 if __name__ == "__main__":

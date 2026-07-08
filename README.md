@@ -18,6 +18,17 @@ One linear pipeline. **Step 1 produces the input files** — from your own corpu
 
 ---
 
+## Two scenarios
+
+The audit answers *"how much does a fine-tuned model leak the direct identifiers in its training data?"* — in one of two settings. **Read this first**, then pick your path in Step 1:
+
+- **Scenario 1 — synthetic or "perfectly" de-identified data (as in the paper).** Your notes have their direct identifiers removed (`___`). You **inject** synthetic identifiers into the blanks at a chosen rate, fine-tune, and measure how much the model memorizes and leaks. No labeled file to prepare — injection records the members for you.
+- **Scenario 2 — a real, imperfectly de-identified corpus you want to audit.** The identifiers are already in the notes; there is no injection. You provide a small **labeled** file (a handful of identifiers marked member / non-member, from a manual review or a de-identification tool) and estimate the actual leakage.
+
+Both share Steps 3–5 (train → generate → audit) and differ only in how the training data and the labeled set are produced (Steps 1–2). The synthetic smoke test covers both: `run_smoke.sh` (scenario 1) and `SCENARIO=2 run_smoke.sh` (scenario 2).
+
+---
+
 ## Setup
 
 - **Python:** 3.8+
@@ -36,6 +47,8 @@ One linear pipeline. **Step 1 produces the input files** — from your own corpu
   the `index/` registry) or by LLM injection — never by the new-dataset path:
   - `INDEX_FOLDER` — training registry directory (default: `./index`); `OUTPUT_DIR`, `PII_INSERTION_OUTPUTS` — legacy evaluation / injection output dirs.
   - `GEMINI_USAGE_LOG`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` — only for LLM-based injection (Step 2 `--classifier llm`).
+
+- **Reproducibility.** Every step is seeded (`--seed`, default 42) and deterministic — splits, personas, which blanks get injected, generation, the verifier, training. The one exception is LLM classification (`inject --classifier llm`), which depends on the model; use `--classifier label` for a bit-for-bit reproducible injection.
 
 ---
 
@@ -74,12 +87,7 @@ The pipeline consumes **at most two small Parquet files** — nothing MIMIC-spec
    "Jane Doe",0
    ```
 
-`subject_id` keeps all of a subject's notes on one side of the train/val split (use a unique id per note if there is no natural grouping). A ready-made synthetic example of both files is in [`examples/synthetic/`](examples/synthetic/) (`notes.parquet`, `labeled.parquet`, plus `.csv` previews).
-
-**Two scenarios:**
-
-- **Scenario 1 — synthetic or "perfectly" de-identified data.** Inject synthetic direct identifiers into the `___` blanks, fine-tune, and measure how much the model memorizes and leaks (as in the paper). No labeled file needed — Step 2 emits one for you.
-- **Scenario 2 — a real, imperfectly de-identified corpus to audit.** Manually review a few notes (or run a de-identification tool) to find a handful of residual identifiers, build the small labeled file above, and estimate the actual leakage.
+`subject_id` keeps all of a subject's notes on one side of the train/val split (use a unique id per note if there is no natural grouping). Which of the two files you need depends on your [scenario](#two-scenarios): scenario 1 needs only the notes (injection builds the labeled set); scenario 2 needs both. A ready-made synthetic example is in [`examples/synthetic/`](examples/synthetic/) (`notes.parquet`, `labeled.parquet`, plus `.csv` previews).
 
 ---
 
