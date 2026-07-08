@@ -93,16 +93,55 @@ def classify_llm(text, note_id, api, llm_kwargs):
     return _parse_categories(resp, n)
 
 
+def _coerce_obj(obj):
+    """Reduce a json_repair result to a single mapping.
+
+    Reasoning models often emit several JSON objects in one reply — restating the
+    prompt's example before the final answer, or one object per blank — in which
+    case ``json_repair.loads`` returns a *list*. Merge all dict members (later
+    ones win, so the final answer overrides an earlier draft). Anything else -> {}.
+    """
+    if isinstance(obj, dict):
+        return obj
+    if isinstance(obj, list):
+        merged = {}
+        for o in obj:
+            if isinstance(o, dict):
+                merged.update(o)
+        return merged
+    return {}
+
+
 def _parse_categories(resp, n):
-    """Parse the LLM's JSON classification, tolerating fences/garbage."""
+    """Parse the LLM's JSON classification into {blank_number: category}.
+
+    Tolerant of reasoning-model output: strips code fences, ignores surrounding
+    reasoning prose, and merges multiple JSON objects. Falls back to parsing the
+    whole text if a fenced slice yields nothing, and to ``other`` for anything
+    unrecognized. Never raises.
+    """
     from json_repair import json_repair
     text = resp or ""
+
+    def _try(s):
+        try:
+            return _coerce_obj(json_repair.loads(s.strip()))
+        except Exception:
+            return {}
+
+    obj = {}
     if "```" in text:
-        text = text.split("```json")[-1].split("```")[0] if "```json" in text else text.split("```")[1]
-    try:
-        obj = json_repair.loads(text.strip())
-    except Exception:
-        obj = {}
+        # Prefer the LAST ```json block (a corrected answer wins over a first pass).
+        if "```json" in text:
+            fenced = text.split("```json")[-1].split("```")[0]
+        elif text.count("```") >= 2:
+            fenced = text.split("```")[1]
+        else:
+            fenced = ""
+        obj = _try(fenced)
+    if not obj:                       # no fence, or the fenced slice had no JSON
+        obj = _try(text)
+
     cats = {}
     for k in range(1, n + 1):
         c = str(obj.get(str(k), "other")).strip().lower() if isinstance(obj, dict) else "other"
@@ -181,6 +220,12 @@ def main():
                         help="Base URL for --api openai, e.g. http://<host>:<port>/v1 (env OPENAI_API_BASE)")
     parser.add_argument("--api-key", default=None, help="API key for --api openai (env OPENAI_API_KEY)")
     parser.add_argument("--api-port", type=int, default=None, help="Port for --api vllm (default 12346)")
+    parser.add_argument("--llm-max-tokens", type=int, default=None,
+                        help="Max completion tokens for --classifier llm (default backend value; "
+                             "raise for reasoning models that think a lot)")
+    parser.add_argument("--llm-no-think", action="store_true",
+                        help="Disable model 'thinking' for --classifier llm (reasoning models: "
+                             "sends chat_template_kwargs enable_thinking=false + a /no_think hint)")
     parser.add_argument("--di-type", default="name", help="Default DI type for unlabeled blanks")
     parser.add_argument("--di-rate", "--proportion", dest="di_rate", type=float, default=0.05,
                         help="Direct-identifier rate: probability each DI blank keeps an identifier "
@@ -200,6 +245,10 @@ def main():
             llm_kwargs["base_url"] = args.api_base
         if args.api_key:
             llm_kwargs["api_key"] = args.api_key
+        if args.llm_max_tokens:
+            llm_kwargs["max_tokens"] = args.llm_max_tokens
+        if args.llm_no_think:
+            llm_kwargs["no_think"] = True
     elif args.api == "vllm" and args.api_port:
         llm_kwargs["port"] = args.api_port
 

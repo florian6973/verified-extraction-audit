@@ -62,3 +62,7 @@ dev = [
 
 [tool.setuptools]
 packages = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]

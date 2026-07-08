@@ -32,6 +32,8 @@ API="${API:-openai}"                 # openai | vllm | gemini | mock
 API_BASE="${API_BASE:-http://localhost:8000/v1}"
 MODEL="${MODEL:-local}"
 # API_KEY optional -> exported OPENAI_API_KEY or --api-key
+NO_THINK="${NO_THINK:-}"             # set to 1 for reasoning models (disable thinking)
+LLM_MAX_TOKENS="${LLM_MAX_TOKENS:-}" # raise if a reasoning model needs more room
 
 # --- training / eval ---
 BASE_MODEL="${BASE_MODEL:-models/base/Llama_3.2-1B}"
@@ -58,6 +60,7 @@ echo "==== [3/6] inject direct identifiers (classifier=$CLASSIFIER -> fill by no
 $PYTHON -m src.dataset.prepare.inject \
     --splits-root "$DATA_ROOT" --version 8 --classifier "$CLASSIFIER" \
     --api "$API" --api-base "$API_BASE" --model "$MODEL" ${API_KEY:+--api-key "$API_KEY"} \
+    ${NO_THINK:+--llm-no-think} ${LLM_MAX_TOKENS:+--llm-max-tokens "$LLM_MAX_TOKENS"} \
     --di-type "$DI_TYPE" --di-rate "$DI_RATE" \
     --output-sft "$DATA_ROOT/sft" --emit-labeled "$WORK/labeled.parquet"
 SFT_TRAIN="$(ls "$DATA_ROOT"/sft/train_*.json | head -1)"
