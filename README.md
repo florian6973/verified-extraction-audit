@@ -2,30 +2,28 @@
 
 Code for the verified extraction audit pipeline: **data preparation** (direct-identifier insertion into clinical notes), **model training** (supervised fine-tuning), and **evaluation** (verified extraction-risk metrics).
 
-This repository is an anonymized, self-contained export of the components used for the paper. It does not include MIMIC-IV data, base model weights, or job submission scripts; you provide those locally.
+---
+
+## Two scenarios
+
+The audit answers *"how much does a fine-tuned model leak the direct identifiers in its training data?"* — in one of two settings. Pick your path in [Step 1](#step-1--prepare-your-data):
+
+- **Scenario 1 — synthetic or "perfectly" de-identified data (as in the paper).** Your notes have their direct identifiers removed (`___`). You **inject** synthetic identifiers into the blanks at a chosen rate, fine-tune, and measure how much the model memorizes and leaks. No labeled file to prepare — injection records the members for you.
+- **Scenario 2 — a real, imperfectly de-identified corpus you want to audit.** The identifiers are already in the notes; there is no injection. You provide a small **labeled** file (a handful of identifiers marked member / non-member, from a manual review or a de-identification tool) and estimate the actual leakage.
+
+The synthetic smoke test covers both: `run_smoke.sh` (scenario 1) and `SCENARIO=2 run_smoke.sh` (scenario 2).
 
 ---
 
 ## Overview
 
-One linear pipeline. **Step 1 produces the input files** — from your own corpus *or* from MIMIC — and **Steps 2–5 are identical either way**:
+One linear pipeline. Only how the training data and labeled set are produced (Steps 1–2) differs between the two scenarios — **Steps 3–5 are identical**:
 
 1. **Prepare data** → get your notes into a `(subject_id, note)` Parquet with `___` blanks, then `ingest` → internal splits + synthetic personas.
-2. **Inject** → fill the blanks with synthetic direct identifiers (offline or LLM) and sample to the target rate → SFT dataset.
+2. **Inject** *(scenario 1 only)* → fill the blanks with synthetic direct identifiers (offline or LLM), sampled to the target rate → SFT dataset + labeled set. *Scenario 2 skips this: the identifiers are already in the notes and you bring your own labeled set.*
 3. **Train** → fine-tune a language model on the SFT data.
 4. **Generate** → sample attacker-query *completions* from the fine-tuned model.
 5. **Audit** → train the verification classifier and report the theoretical + experimental extraction curves.
-
----
-
-## Two scenarios
-
-The audit answers *"how much does a fine-tuned model leak the direct identifiers in its training data?"* — in one of two settings. **Read this first**, then pick your path in Step 1:
-
-- **Scenario 1 — synthetic or "perfectly" de-identified data (as in the paper).** Your notes have their direct identifiers removed (`___`). You **inject** synthetic identifiers into the blanks at a chosen rate, fine-tune, and measure how much the model memorizes and leaks. No labeled file to prepare — injection records the members for you.
-- **Scenario 2 — a real, imperfectly de-identified corpus you want to audit.** The identifiers are already in the notes; there is no injection. You provide a small **labeled** file (a handful of identifiers marked member / non-member, from a manual review or a de-identification tool) and estimate the actual leakage.
-
-Both share Steps 3–5 (train → generate → audit) and differ only in how the training data and the labeled set are produced (Steps 1–2). The synthetic smoke test covers both: `run_smoke.sh` (scenario 1) and `SCENARIO=2 run_smoke.sh` (scenario 2).
 
 ---
 
@@ -39,14 +37,10 @@ Both share Steps 3–5 (train → generate → audit) and differ only in how the
   pip install -e .          # or: export PYTHONPATH=/path/to/verified-extraction-audit
   ```
 
-- **Configuration is minimal.** The new-dataset path (Steps 1–5) is driven entirely by
-  command-line flags plus one optional env var — no Hydra configs, no `index/` registry:
+- **Configuration is minimal.** The whole pipeline — your own data *and* the MIMIC subset job — is driven by command-line flags and a single env var; no Hydra configs, no `index/` registry:
   - `DATA_ROOT` — root for the internal `splits_filtered_v*` / `splits_personas_v*` layout (default: `data/processed`).
 
-  The rest are used **only** by the MIMIC / paper path (the Hydra configs under `src/configs/` and
-  the `index/` registry) or by LLM injection — never by the new-dataset path:
-  - `INDEX_FOLDER` — training registry directory (default: `./index`); `OUTPUT_DIR`, `PII_INSERTION_OUTPUTS` — legacy evaluation / injection output dirs.
-  - `GEMINI_USAGE_LOG`, `GOOGLE_CLOUD_PROJECT`, `GOOGLE_CLOUD_LOCATION` — only for LLM-based injection (Step 2 `--classifier llm`).
+  The legacy env vars are needed **only** for the original paper path: `INDEX_FOLDER` / `OUTPUT_DIR` for index-based training (`finetune.py --model_id`) and the `compute_risk` eval, and `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` for `--api gemini` injection. Both are called out in the collapsibles below; neither the new-dataset nor the MIMIC-subset path uses them.
 
 - **Reproducibility.** Every step is seeded (`--seed`, default 42) and deterministic — splits, personas, which blanks get injected, generation, the verifier, training. The one exception is LLM classification (`inject --classifier llm`), which depends on the model; use `--classifier label` for a bit-for-bit reproducible injection.
 
@@ -62,7 +56,7 @@ bash   src/jobs/smoke/run_smoke.sh          # or any GPU box (CPU works, slowly)
 SCENARIO=2 bash src/jobs/smoke/run_smoke.sh  # scenario 2 (identifiers already in the notes)
 ```
 
-It runs every step below and writes the leakage report to `outputs/smoke/audit/audit_report.json`. Edit the `SBATCH` directives and the `CONDA_ENV` / `CUDA_MODULE` variables at the top of the `.slurm` file to match your cluster. Training uses bf16, so request an **Ampere-or-newer GPU** (A100/H100/L4/RTX 30+); on mixed-hardware clusters pin it with `#SBATCH --constraint=...`.
+It runs every step below and writes the leakage report to `outputs/smoke/scenario1/audit/audit_report.json`. Edit the `SBATCH` directives and the `CONDA_ENV` / `CUDA_MODULE` variables at the top of the `.slurm` file to match your cluster. Training uses bf16, so request an **Ampere-or-newer GPU** (A100/H100/L4/RTX 30+); on mixed-hardware clusters pin it with `#SBATCH --constraint=...`.
 
 ---
 
@@ -113,39 +107,36 @@ python -m src.dataset.prepare.ingest --input data/notes.parquet --name mydata \
 
 ### Option B — MIMIC-IV (the paper's setup)
 
-MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content/mimic-iv-note/2.2/).
+MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content/mimic-iv-note/2.2/); download `discharge.csv` to `data/raw/`. The notes already contain `___` where identifiers were removed, so nothing is masked.
 
-1. Download `discharge.csv` (and optionally `admissions.csv`, `patients.csv`) to `data/raw/`.
-2. Build splits (Hydra config `src/configs/dataset/mimic.yaml`):
+**Subsample → ingest.** Keep a subject-level fraction and feed it straight through Option A's `ingest` — no Hydra, no `index/`, no `admissions.csv`/`patients.csv`. This is exactly what the one-shot MIMIC job runs:
 
-   ```bash
-   python -m src.dataset.splits.mimic          # writes data/processed/splits/{train,val,test,train_1,val_1,...}.parquet
-   ```
+```bash
+python -m src.dataset.prepare.mimic_subset --discharge data/raw/discharge.csv \
+  --out data/mimic_1pct.parquet --frac 0.01          # --frac 1.0 for the full corpus
+export DATA_ROOT=data/processed_mimic1
+python -m src.dataset.prepare.ingest --input data/mimic_1pct.parquet --name mimic1 --out-root $DATA_ROOT
+```
 
-   Each split has `text`, `subject_id`, and a `note_id`. *(Optional stats table: `python -m src.dataset.splits.stats_to_latex --splits_dir data/processed/splits --output outputs/splits/stats_table.tex`.)*
-3. Build the filtered notes + synthetic personas. MIMIC-IV discharge notes already contain `___` where identifiers were removed, so this step masks nothing — it writes `splits_filtered_v<V>/` (the `___` notes) and a `note_id`-matched `splits_personas_v<V>/`:
+Then continue with Steps 2–5, or run the whole pipeline (subsample → ingest → inject → train → generate → audit) as one SLURM job:
 
-   ```bash
-   python src/dataset/pii_insertion/fake_persona.py    # -> splits_filtered_v* + splits_personas_v* (validate with persona_check.py)
-   ```
+```bash
+sbatch --export=ALL,DISCHARGE=data/raw/discharge.csv,API_BASE=http://<host>:<port>/v1,MODEL=<served-model> \
+       src/jobs/mimic/mimic_test.slurm     # knobs: FRAC, DI_RATE, CLASSIFIER, BASE_MODEL, N_EPOCHS, K, … (see src/jobs/mimic/run_mimic.sh)
+```
 
-   **Quick test (recommended, e.g. 1% of the data):** skip the full persona build — MIMIC notes already carry `___`, so subsample and go straight through Option A's `ingest` (synthetic personas, no `admissions.csv`/`patients.csv` needed):
+<details>
+<summary><b>The paper's original build (canonical splits + personas)</b></summary>
 
-   ```bash
-   python -m src.dataset.prepare.mimic_subset --discharge data/raw/discharge.csv \
-     --out data/mimic_1pct.parquet --frac 0.01
-   export DATA_ROOT=data/processed_mimic1
-   python -m src.dataset.prepare.ingest --input data/mimic_1pct.parquet --name mimic1 --out-root $DATA_ROOT
-   ```
+The paper builds the fixed `train/val/test` (plus `train_1`/`val_1`/… subset) splits and its persona set through Hydra, instead of the generic synthetic personas `ingest` makes. **Steps 2–5 are identical**; only how the splits and personas are produced differs. It needs `admissions.csv`/`patients.csv` in `data/raw/` for the demographics.
 
-   Then continue with Steps 2–5 — or run the whole thing as one SLURM job:
+```bash
+python -m src.dataset.splits.mimic                 # Hydra config src/configs/dataset/mimic.yaml -> data/processed/splits/{train,val,test,...}.parquet
+python src/dataset/pii_insertion/fake_persona.py   # -> splits_filtered_v* + splits_personas_v* (validate with persona_check.py)
+```
 
-   ```bash
-   sbatch --export=ALL,DISCHARGE=data/raw/discharge.csv,API_BASE=http://<host>:<port>/v1,MODEL=<served-model> \
-          src/jobs/mimic/mimic_test.slurm     # knobs: FRAC, DI_RATE, BASE_MODEL, N_EPOCHS, K, … (see src/jobs/mimic/run_mimic.sh)
-   ```
-
-   (To adapt a *different* corpus, replace `src/dataset/splits/mimic.py` with your own splits builder that emits `text`/`subject_id`/`note_id` and reuse `split_on_subject_id` / `save_df`.)
+*(Optional stats table: `python -m src.dataset.splits.stats_to_latex --splits_dir data/processed/splits --output outputs/splits/stats_table.tex`. To adapt a **different** corpus, replace `src/dataset/splits/mimic.py` with your own splits builder emitting `text`/`subject_id`/`note_id`.)*
+</details>
 
 ---
 
@@ -153,7 +144,7 @@ MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content
 
 `inject` does the whole job in one step: for each note it **classifies** every `___` blank into a direct-identifier category, **fills** it with the matching field of the note's persona (matched **by `note_id`**, never by row order), and **samples** at the direct-identifier rate `--di-rate` — writing the SFT dataset plus the scenario-2 labeled set. Classification comes from either the note label or a single LLM call:
 
-- **Offline / deterministic** — classify by the note label (`Name:`, `MRN:`, …); no LLM. Used by the smoke test:
+- **Offline / deterministic** — no LLM. `--classifier label` reads the note label (`Name:`, `MRN:`, …) before each blank; `--classifier first` fills only the first blank (handy for MIMIC, whose notes lead with `Name:`). Used by the smoke test:
 
   ```bash
   python -m src.dataset.prepare.inject --splits-root $DATA_ROOT --version 8 \
@@ -175,12 +166,10 @@ MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content
   for R in 0.01 0.05 0.1 1.0; do
     python -m src.dataset.prepare.inject --splits-root $DATA_ROOT --classifier label \
       --di-type name --di-rate $R --output-sft $DATA_ROOT/sft --emit-labeled data/labeled_$R.parquet
-    python src/finetuning/finetune.py --model_name_or_path models/base/Llama_3.2-1B \
-      --dataset_path $DATA_ROOT/sft/train_$R.json --output_dir outputs/mydata/ft_$R --n_epochs 3
-  done
+  done   # then train + audit each train_$R.json independently (Steps 3 & 5)
   ```
 
-This writes `$DATA_ROOT/sft/{train,val}_0.05.json` (the **SFT datasets** for training) and `members_<split>.csv`. Both classifiers fill from the same personas by `note_id`, so results are independent of parquet row order or `os.listdir`.
+This writes `$DATA_ROOT/sft/{train,val}_0.05.json` (the **SFT datasets** for training) and `members_<split>.csv`. Every classifier fills from the same personas by `note_id`, so results are independent of parquet row order or `os.listdir`.
 
 ---
 
@@ -236,7 +225,7 @@ python -m src.evaluation.audit.from_labels \
   --output-dir outputs/mydata/audit
 ```
 
-`outputs/mydata/audit/audit_report.json` always contains the closed-form **theoretical** curves — recall, extracted-stream FPR and TPR vs attacker query budget *Q*, at the operating threshold τ. If you pass `--generations` (Step 4), it also contains the measured **experimental** curves (completions matched to the labeled members, scored with the fold ensemble), so you can check whether theory matches experiment at each *Q*.
+`outputs/mydata/audit/audit_report.json` reports the verifier AUC and the closed-form **theoretical** curves — recall, extracted-stream FPR/TPR vs attacker query budget *Q*, at the operating threshold τ. With `--generations` (Step 4) it adds the measured **experimental** extraction: the full confusion matrix (TP/FP, recall, TPR, FPR, PPV) over the generated candidates with 95% bootstrap CIs, so you can check theory against experiment at each *Q*. A completion counts as extracting a member only when the name is clean at its start (the paper's position filter, on by default; `--no-position-match` disables it), and `--filter-names` drops non-name junk from the false-positive pool.
 
 <details>
 <summary><b>Paper's index-based evaluation (MIMIC)</b></summary>
@@ -269,9 +258,10 @@ Extending to a new direct identifier requires only three things, all captured pe
 - `src/finetuning/` — training (`finetune.py`), utils, checkpoint post-processing.
 - `src/evaluation/pipeline/` — attacker-query generation (`generate_completions`), closed-form curves (`theory_curves`, `attack_curves`), the paper's risk eval (`compute_risk*`, `plot_relative_leakage_risk`), and the verifier pieces the audit reuses under `experimental/` + `experimental/mia/`.
 - `src/evaluation/pipeline/paper/` — legacy paper-reproduction analysis (figures, tables, bootstrap CIs); **not used by the live audit** (see its `README.md`).
-- `src/evaluation/audit/` — the generic scenario-2 audit (`from_labels`) that composes the pipeline pieces.
+- `src/evaluation/audit/` — the generic audit (`from_labels`, both scenarios) that composes the pipeline pieces.
 - `src/jobs/smoke/` — the self-contained SLURM smoke test (`smoke_test.slurm`, `run_smoke.sh`, `build_tiny_model`).
-- `src/llm/` — LLM backends for injection (Gemini, vLLM, and an offline `mock`).
+- `src/jobs/mimic/` — the one-shot MIMIC-subset SLURM job (`mimic_test.slurm`, `run_mimic.sh`).
+- `src/llm/` — LLM backends for injection: any OpenAI-compatible server (`openai`), plus `gemini`, `vllm`, and an offline `mock`.
 - `src/folder_handler.py`, `index/` — the dataset/model index (placeholder CSVs; `seed_index` writes real ones).
 - `examples/synthetic/` — a ready-made synthetic dataset.
 
