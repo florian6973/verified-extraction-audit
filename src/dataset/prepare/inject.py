@@ -32,6 +32,7 @@ import re
 
 import pandas as pd
 from loguru import logger
+from tqdm import tqdm
 
 from src.dataset.prepare.di_types import DI_TYPES, detect_di_type, get_di_type
 
@@ -98,7 +99,7 @@ def _parse_categories(resp, n):
     return cats
 
 
-def inject_split(filtered_df, personas_df, di, classifier, api, llm_kwargs, di_rate, rng):
+def inject_split(filtered_df, personas_df, di, classifier, api, llm_kwargs, di_rate, rng, desc="inject"):
     """Fill blanks + sample for one split. Returns (sft_records, members).
 
     ``di_rate`` is the probability each direct-identifier blank keeps an identifier
@@ -109,7 +110,9 @@ def inject_split(filtered_df, personas_df, di, classifier, api, llm_kwargs, di_r
     personas_by_id = personas_df.set_index("note_id")
 
     sft_records, members = [], []
-    for _, row in filtered_df.iterrows():
+    # tqdm shows notes/s + ETA; with --classifier llm each note is one API call,
+    # so this is the live speed of name injection (progress prints to the .out).
+    for _, row in tqdm(filtered_df.iterrows(), total=len(filtered_df), desc=desc):
         note_id, text = row["note_id"], row["text"]
         subject_id = row.get("subject_id", "")
         if note_id not in personas_by_id.index:
@@ -197,7 +200,8 @@ def main():
             logger.warning(f"Skipping {split}: missing {filtered} or {personas}")
             continue
         sft, members = inject_split(pd.read_parquet(filtered), pd.read_parquet(personas),
-                                    di, args.classifier, args.api, llm_kwargs, args.di_rate, rng)
+                                    di, args.classifier, args.api, llm_kwargs, args.di_rate, rng,
+                                    desc=f"inject[{split}]")
         with open(os.path.join(output_sft, f"{split}_{args.di_rate}.json"), "w", encoding="utf-8") as f:
             json.dump(sft, f, indent=2, ensure_ascii=False)
         mdf = pd.DataFrame(members)
