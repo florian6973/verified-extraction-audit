@@ -51,8 +51,8 @@ class DirectIdentifierType:
 def _parse_first_two_words(text: str) -> str:
     """First two whitespace tokens, title-cased, dots stripped (a First Last name).
 
-    Matches the extraction heuristic used in the evaluation code
-    (``ner_ll_remaining.extract_names``).
+    Matches the extraction heuristic used in the paper's evaluation code
+    (``pipeline/paper/ner_ll_remaining.extract_names``).
     """
     tokens = text.strip().split()
     name = " ".join(tokens[:2])

@@ -267,7 +267,8 @@ Extending to a new direct identifier requires only three things, all captured pe
 - `src/dataset/pii_insertion/` — synthetic-persona utilities: `fake_persona` (persona generation, incl. the MIMIC build), `build_name_filter_list`, `persona_check`.
 - `src/dataset/splits/` — MIMIC splits (`mimic.py`) and optional stats table; config in `src/configs/dataset/mimic.yaml`.
 - `src/finetuning/` — training (`finetune.py`), utils, checkpoint post-processing.
-- `src/evaluation/pipeline/` — attacker-query generation (`generate_completions`), closed-form curves (`theory_curves`, `attack_curves`), the paper's risk eval (`compute_risk*`, `plot_relative_leakage_risk`), and the verifier/attack pieces under `experimental/` + `experimental/mia/`.
+- `src/evaluation/pipeline/` — attacker-query generation (`generate_completions`), closed-form curves (`theory_curves`, `attack_curves`), the paper's risk eval (`compute_risk*`, `plot_relative_leakage_risk`), and the verifier pieces the audit reuses under `experimental/` + `experimental/mia/`.
+- `src/evaluation/pipeline/paper/` — legacy paper-reproduction analysis (figures, tables, bootstrap CIs); **not used by the live audit** (see its `README.md`).
 - `src/evaluation/audit/` — the generic scenario-2 audit (`from_labels`) that composes the pipeline pieces.
 - `src/jobs/smoke/` — the self-contained SLURM smoke test (`smoke_test.slurm`, `run_smoke.sh`, `build_tiny_model`).
 - `src/llm/` — LLM backends for injection (Gemini, vLLM, and an offline `mock`).

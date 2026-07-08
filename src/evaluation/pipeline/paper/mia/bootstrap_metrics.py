@@ -10,7 +10,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from tqdm import tqdm
 import os
-from src.evaluation.pipeline.experimental.mia.name_filter import name_mask
+from src.evaluation.pipeline.paper.mia.name_filter import name_mask
 
 def bootstrap_metrics(
     df: pd.DataFrame,

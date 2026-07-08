@@ -24,7 +24,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score, roc_auc_score, confusion_matrix, roc_curve
-from src.evaluation.pipeline.experimental.mia.name_filter import name_mask
+from src.evaluation.pipeline.paper.mia.name_filter import name_mask
 
 # Load data
 if not os.path.exists(data_path):
