@@ -45,6 +45,7 @@ dependencies = [
     "hydra-core>=1.3.0",
     "omegaconf>=2.0.0",
     "PyYAML",
+    "requests",
 ]
 # Optional: for PII insertion with Gemini
 # "google-genai>=1.21.1"

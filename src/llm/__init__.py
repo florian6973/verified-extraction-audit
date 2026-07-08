@@ -20,6 +20,11 @@ def call_llm(backend, prompt, kwargs):
         from src.llm.gemini.utils import call_llm_gemini_default
 
         return call_llm_gemini_default(prompt, **kwargs)
+    elif backend == "openai":
+        from src.llm.openai.utils import call_openai_server
+
+        logger.info(f"Calling OpenAI-compatible server with kwargs: {kwargs}")
+        return call_openai_server(prompt, **kwargs)
     elif backend == "mock":
         from src.llm.mock.utils import call_mock
 

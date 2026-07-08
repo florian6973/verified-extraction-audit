@@ -61,8 +61,12 @@ def classify_label(text, default_di):
             for i, pos in enumerate(_blank_offsets(text))}
 
 
-def classify_llm(text, note_id, api, model):
-    """{blank_number: category} from a single LLM call classifying all blanks."""
+def classify_llm(text, note_id, api, llm_kwargs):
+    """{blank_number: category} from a single LLM call classifying all blanks.
+
+    ``llm_kwargs`` carries the backend params (``model``, and for ``openai`` the
+    ``base_url`` / ``api_key``, or for ``vllm`` the ``port``).
+    """
     from src.llm import call_llm
 
     numbered, n = _numbered(text)
@@ -73,7 +77,7 @@ def classify_llm(text, note_id, api, model):
         'number (as a string) to its category, e.g. {"1": "name-patient", "2": "id"}.\n\n'
         f"Note:\n{numbered}"
     )
-    resp = call_llm(api, prompt, {"model": model, "task": "classify_blanks", "note": note_id})
+    resp = call_llm(api, prompt, {**llm_kwargs, "task": "classify_blanks", "note": note_id})
     return _parse_categories(resp, n)
 
 
@@ -94,7 +98,7 @@ def _parse_categories(resp, n):
     return cats
 
 
-def inject_split(filtered_df, personas_df, di, classifier, api, model, di_rate, rng):
+def inject_split(filtered_df, personas_df, di, classifier, api, llm_kwargs, di_rate, rng):
     """Fill blanks + sample for one split. Returns (sft_records, members).
 
     ``di_rate`` is the probability each direct-identifier blank keeps an identifier
@@ -116,7 +120,7 @@ def inject_split(filtered_df, personas_df, di, classifier, api, model, di_rate, 
             persona = persona.iloc[0]
 
         cats = (classify_label(text, di) if classifier == "label"
-                else classify_llm(text, note_id, api, model))
+                else classify_llm(text, note_id, api, llm_kwargs))
 
         # Rebuild the note, filling each blank at the sampling rate.
         segments = text.split("___")
@@ -150,9 +154,13 @@ def main():
     parser.add_argument("--splits", nargs="+", default=["train", "val"])
     parser.add_argument("--classifier", choices=["label", "llm"], default="label",
                         help="How to classify each blank: note-label heuristic (offline) or one LLM call/note")
-    parser.add_argument("--api", choices=["gemini", "vllm", "mock"], default="mock",
-                        help="LLM backend when --classifier llm")
+    parser.add_argument("--api", choices=["gemini", "vllm", "openai", "mock"], default="mock",
+                        help="LLM backend when --classifier llm ('openai' = any OpenAI-compatible server)")
     parser.add_argument("--model", default="mock", help="LLM model name when --classifier llm")
+    parser.add_argument("--api-base", default=None,
+                        help="Base URL for --api openai, e.g. http://<host>:<port>/v1 (env OPENAI_API_BASE)")
+    parser.add_argument("--api-key", default=None, help="API key for --api openai (env OPENAI_API_KEY)")
+    parser.add_argument("--api-port", type=int, default=None, help="Port for --api vllm (default 12346)")
     parser.add_argument("--di-type", default="name", help="Default DI type for unlabeled blanks")
     parser.add_argument("--di-rate", "--proportion", dest="di_rate", type=float, default=0.05,
                         help="Direct-identifier rate: probability each DI blank keeps an identifier "
@@ -165,6 +173,16 @@ def main():
     args = parser.parse_args()
 
     di = get_di_type(args.di_type)
+    # Backend params (only what the chosen backend accepts).
+    llm_kwargs = {"model": args.model}
+    if args.api == "openai":
+        if args.api_base:
+            llm_kwargs["base_url"] = args.api_base
+        if args.api_key:
+            llm_kwargs["api_key"] = args.api_key
+    elif args.api == "vllm" and args.api_port:
+        llm_kwargs["port"] = args.api_port
+
     output_sft = args.output_sft or os.path.join(args.splits_root, "sft")
     members_dir = args.members_dir or args.splits_root
     os.makedirs(output_sft, exist_ok=True)
@@ -179,7 +197,7 @@ def main():
             logger.warning(f"Skipping {split}: missing {filtered} or {personas}")
             continue
         sft, members = inject_split(pd.read_parquet(filtered), pd.read_parquet(personas),
-                                    di, args.classifier, args.api, args.model, args.di_rate, rng)
+                                    di, args.classifier, args.api, llm_kwargs, args.di_rate, rng)
         with open(os.path.join(output_sft, f"{split}_{args.di_rate}.json"), "w", encoding="utf-8") as f:
             json.dump(sft, f, indent=2, ensure_ascii=False)
         mdf = pd.DataFrame(members)

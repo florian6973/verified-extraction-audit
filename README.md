@@ -130,7 +130,14 @@ MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content
    python -m src.dataset.prepare.ingest --input data/mimic_1pct.parquet --name mimic1 --out-root $DATA_ROOT
    ```
 
-   Then continue with Steps 2–5. (To adapt a *different* corpus, replace `src/dataset/splits/mimic.py` with your own splits builder that emits `text`/`subject_id`/`note_id` and reuse `split_on_subject_id` / `save_df`.)
+   Then continue with Steps 2–5 — or run the whole thing as one SLURM job:
+
+   ```bash
+   sbatch --export=ALL,DISCHARGE=data/raw/discharge.csv,API_BASE=http://<host>:<port>/v1,MODEL=<served-model> \
+          src/jobs/mimic/mimic_test.slurm     # knobs: FRAC, DI_RATE, BASE_MODEL, N_EPOCHS, K, … (see src/jobs/mimic/run_mimic.sh)
+   ```
+
+   (To adapt a *different* corpus, replace `src/dataset/splits/mimic.py` with your own splits builder that emits `text`/`subject_id`/`note_id` and reuse `split_on_subject_id` / `save_df`.)
 
 ---
 
@@ -146,11 +153,11 @@ MIMIC-IV Clinical Notes require [PhysioNet access](https://physionet.org/content
     --output-sft $DATA_ROOT/sft --emit-labeled data/labeled.parquet
   ```
 
-- **LLM** — one call per note asks the model to classify every blank at once; the persona then fills them (`--api gemini|vllm`, or `mock` for an offline dry run). Set the Google Cloud / Gemini env vars first:
+- **LLM** — one call per note asks the model to classify every blank at once; the persona then fills them. Use any **OpenAI-compatible server** (your local vLLM / llama.cpp / …) with `--api openai --api-base http://<host>:<port>/v1`, or `--api gemini` (set the Google Cloud env vars), `--api vllm` (default `localhost:12346`), or `--api mock` (offline dry run):
 
   ```bash
   python -m src.dataset.prepare.inject --splits-root $DATA_ROOT --version 8 \
-    --classifier llm --api gemini --model gemini-2.5-flash-preview-05-20 \
+    --classifier llm --api openai --api-base http://localhost:8000/v1 --model my-served-model \
     --di-type name --di-rate 0.05 --output-sft $DATA_ROOT/sft --emit-labeled data/labeled.parquet
   ```
 
