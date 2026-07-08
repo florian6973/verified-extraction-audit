@@ -36,6 +36,7 @@ import os
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 from src.dataset.prepare.di_types import get_di_type, parse_candidate
 from src.evaluation.pipeline.experimental.compute_ll_names import compute_name_ll, load_model
@@ -51,22 +52,32 @@ DEFAULT_BUDGETS = [1e5, 1e6]
 # --------------------------------------------------------------------------- #
 # Feature extraction (reuses compute_ll_names.compute_name_ll / load_model)
 # --------------------------------------------------------------------------- #
-def _features_for(values, model_path, prompts, prefix):
-    """{f'{prefix}{prompt}': [LL per value]} for one model, via compute_name_ll."""
+def _features_for(values, model_path, prompts, prefix, label=""):
+    """{f'{prefix}{prompt}': [LL per value]} for one model, via compute_name_ll.
+
+    LLs are computed one value at a time, so for large candidate sets (e.g. the
+    ~K generated completions) this is the slow part — a tqdm bar per prompt makes
+    the progress visible instead of silent.
+    """
     tok, model, device = load_model(model_path)
     cols = {}
     for prompt in prompts:
         cols[f"{prefix}{prompt}"] = [
-            compute_name_ll(prompt, str(v), tok, model, device)[0] for v in values
+            compute_name_ll(prompt, str(v), tok, model, device)[0]
+            for v in tqdm(values, desc=f"LL {label}{prefix}{prompt}", unit="name")
         ]
     del tok, model
     return cols
 
 
-def build_feature_frame(values, base_model, finetuned_model, prompts):
-    """DataFrame with value + ft_<prompt> (finetuned) + qi_<prompt> (base)."""
-    ft = _features_for(values, finetuned_model, prompts, "ft_")
-    qi = _features_for(values, base_model, prompts, "qi_")
+def build_feature_frame(values, base_model, finetuned_model, prompts, label=""):
+    """DataFrame with value + ft_<prompt> (finetuned) + qi_<prompt> (base).
+
+    Runs 4 LL passes over ``values`` (finetuned/base x each prompt); ``label``
+    tags the progress bars so labeled-set vs generation passes are distinguishable.
+    """
+    ft = _features_for(values, finetuned_model, prompts, "ft_", label)
+    qi = _features_for(values, base_model, prompts, "qi_", label)
     return pd.DataFrame({"value": list(values), **ft, **qi})
 
 
@@ -133,7 +144,10 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
     uniq = list(dict.fromkeys(gen_cands))  # order-preserving unique
 
     # Features for candidates, then ensemble-score via compute_scores (score_unseen).
-    feats = build_feature_frame(uniq, base_model, finetuned_model, prompts)
+    print(f"[audit] experimental extraction: {len(gens_df)} generations -> {len(uniq)} unique "
+          f"candidates; computing LL features (4 passes: finetuned/base x {len(prompts)} prompts)...",
+          flush=True)
+    feats = build_feature_frame(uniq, base_model, finetuned_model, prompts, label="gens ")
     feats["groundtruth"] = check_names(uniq, members, nonmembers)
     ll_csv = os.path.join(out_dir, "all_names_ll_computed.csv")
     feats.to_csv(ll_csv, index=False)
@@ -180,13 +194,16 @@ def run(args):
     labeled["value"] = [parse_candidate(di, e) for e in labeled["entry"]]
 
     # 1) Features -> df_combined.csv (columns the verifier expects)
-    feats = build_feature_frame(labeled["value"].tolist(), args.base_model, args.finetuned_model, prompts)
+    print(f"[audit] 1/5 verifier features for {len(labeled)} labeled entries...", flush=True)
+    feats = build_feature_frame(labeled["value"].tolist(), args.base_model, args.finetuned_model,
+                                prompts, label="labeled ")
     feats["value"] = labeled["value"].values
     feats["split"] = np.where(labeled["label"].values == 1, "train", "val")
     df_combined_csv = os.path.join(args.output_dir, "df_combined.csv")
     feats.to_csv(df_combined_csv, index=False)
 
     # 2) Cross-fit verifier (reused) -> OOF scores + fold models
+    print("[audit] 2/5 training cross-fit verifier...", flush=True)
     feat_cols = [c for c in feature_columns(prompts) if c in feats.columns]
     k = min(5, int(labeled["label"].value_counts().min()))
     models_dir = os.path.join(args.output_dir, "verifier_models")
@@ -201,6 +218,7 @@ def run(args):
     pi_col = f"p_ft_{di.primary_prompt}"
 
     # 4) tau at extracted-stream FPR <= target (reused)
+    print("[audit] 3/5 operating threshold (extracted-stream FPR)...", flush=True)
     df_scores = pd.read_csv(scores_p_csv)
     fpr_budget = args.fpr_budget or max(args.budgets)
     fold_res = compute_threshold_per_fold(df_scores, fold_id_col="fold_id", y_true_col="y_true",
@@ -209,6 +227,7 @@ def run(args):
     tau = float(np.mean([r["threshold"] for r in fold_res.values()])) if fold_res else 0.5
 
     # 5) Theoretical curves (reused)
+    print("[audit] 4/5 theoretical curves...", flush=True)
     theo, theo_inf = theoretical_report(scores_p_csv, pi_col, args.budgets, tau)
 
     report = {
@@ -225,6 +244,7 @@ def run(args):
 
     # 6) Experimental (optional)
     if args.generations:
+        print("[audit] 5/5 experimental extraction from generations...", flush=True)
         gens_df = (pd.read_parquet(args.generations) if args.generations.endswith(".parquet")
                    else pd.read_csv(args.generations))
         report["extraction_experimental"] = experimental_report(
