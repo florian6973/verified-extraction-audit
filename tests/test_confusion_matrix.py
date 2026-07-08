@@ -7,7 +7,18 @@ the bug where FPR was computed over only the labeled non-members (usually ~0).
 import numpy as np
 
 from src.dataset.prepare.di_types import get_di_type
-from src.evaluation.audit.from_labels import _confusion, _looks_like_name, _parse
+from src.evaluation.audit.from_labels import _confusion, _extract, _looks_like_name, _parse
+
+
+def test_position_match_requires_name_at_index_1():
+    di = get_di_type("name")
+    # clean " First Last ..." right after the prompt -> name at idx 1 -> kept
+    assert _extract(di, " Donald Walker MRN: 5", strict=False, position_match=True) == "Donald Walker"
+    # no leading space (idx 0) or extra leading space (idx 2) -> rejected
+    assert _extract(di, "Donald Walker", strict=False, position_match=True) is None
+    assert _extract(di, "  Donald Walker", strict=False, position_match=True) is None
+    # position_match off -> always returns the first-two-words parse
+    assert _extract(di, "Donald Walker", strict=False, position_match=False) == "Donald Walker"
 
 
 def test_strict_parse_preserves_case():

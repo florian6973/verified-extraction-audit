@@ -84,6 +84,59 @@ def feature_columns(prompts):
     return [f"ft_{p}" for p in prompts] + [f"qi_{p}" for p in prompts]
 
 
+def _newest_mtime(path):
+    """Most recent mtime under a model dir (or the file itself); 0 if missing."""
+    if os.path.isfile(path):
+        return os.path.getmtime(path)
+    newest = 0.0
+    for root, _, files in os.walk(path):
+        for f in files:
+            try:
+                newest = max(newest, os.path.getmtime(os.path.join(root, f)))
+            except OSError:
+                pass
+    return newest
+
+
+def cached_feature_frame(values, base_model, finetuned_model, prompts, out_dir, label="", batch_size=64):
+    """Like build_feature_frame but caches LLs by candidate string in
+    ``out_dir/ll_cache.parquet``. LLs depend only on (string, models, prompts), so
+    re-audits (e.g. different match flags) reuse them; the cache is ignored when
+    either model is newer than it, so a retrain recomputes. Only missing candidates
+    hit the GPU.
+    """
+    cols = feature_columns(prompts)
+    cache_path = os.path.join(out_dir, "ll_cache.parquet")
+    cache = None
+    if os.path.exists(cache_path):
+        try:
+            if os.path.getmtime(cache_path) >= max(_newest_mtime(finetuned_model), _newest_mtime(base_model)):
+                c = pd.read_parquet(cache_path)
+                if "value" in c.columns and set(cols).issubset(c.columns):
+                    cache = c.drop_duplicates("value").set_index("value")
+        except Exception:
+            cache = None
+    values = list(values)
+    have = [v for v in values if cache is not None and v in cache.index]
+    missing = [v for v in values if cache is None or v not in cache.index]
+    print(f"[audit] LL cache: {len(have)} hit / {len(missing)} to compute (of {len(values)})", flush=True)
+    frames = []
+    if have:
+        frames.append(cache.loc[have, cols].reset_index())
+    if missing:
+        frames.append(build_feature_frame(missing, base_model, finetuned_model, prompts, label, batch_size))
+    feats = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["value"] + cols)
+    try:  # refresh the cache with the union (best-effort)
+        union = feats[["value"] + cols]
+        if cache is not None:
+            union = pd.concat([cache.reset_index()[["value"] + cols], union], ignore_index=True)
+        union.drop_duplicates("value").to_parquet(cache_path, index=False)
+    except Exception:
+        pass
+    # return rows in the requested order
+    return feats.drop_duplicates("value").set_index("value").reindex(values).reset_index()
+
+
 # --------------------------------------------------------------------------- #
 # check_names: ground-truth membership for generated candidates (generic).
 # --------------------------------------------------------------------------- #
@@ -161,6 +214,24 @@ def _parse(di, s, strict=False):
     return parse_candidate(di, s)
 
 
+def _extract(di, s, strict=False, position_match=False):
+    """Parse a completion into a candidate value, or ``None`` if it shouldn't count.
+
+    With ``position_match`` and a name-type DI, require the extracted name to sit at
+    index 1 of the raw completion — a clean `` First Last`` right after the prompt —
+    reproducing the paper's ``ner_ll_remaining`` ``idx == 1`` filter. This makes
+    "extracted" mean "the completion STARTS with the name", which is exactly what
+    ``pi = exp(LL)`` models (``P(completion starts with the name tokens)``). Without
+    it, a member counts even when it appears in a misaligned completion, so
+    experimental coverage runs ~2x above the theory.
+    """
+    val = _parse(di, s, strict)
+    if position_match and di.parse_strategy == "first_two_words":
+        if str(s).lower().find(val.lower()) != 1:
+            return None
+    return val
+
+
 # --------------------------------------------------------------------------- #
 # Extracted-stream confusion matrix (positive = injected member; negative = every
 # other candidate). Matches paper/mia/bootstrap_metrics (y_true = groundtruth ==
@@ -185,21 +256,23 @@ def _confusion(is_member, passed, total_members):
 # --------------------------------------------------------------------------- #
 def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_model,
                         scores_csv, models_dir, out_dir, tau, budgets, value_col="value",
-                        seed=42, n_bootstrap=1000, filter_names=False, strict_match=False):
+                        seed=42, n_bootstrap=1000, filter_names=False, strict_match=False,
+                        position_match=False):
     members = {_parse(di, e, strict_match) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 1}
     nonmembers = {_parse(di, e, strict_match) for e, l in zip(labeled_df["entry"], labeled_df["label"]) if l == 0}
     total = len(members)
     if total == 0 or value_col not in gens_df.columns:
         return None
 
-    gen_cands = [_parse(di, str(v), strict_match) for v in gens_df[value_col].tolist()]
-    uniq = list(dict.fromkeys(gen_cands))  # order-preserving unique
+    # One candidate per completion; None when position_match rejects a misaligned one.
+    gen_cands = [_extract(di, str(v), strict_match, position_match) for v in gens_df[value_col].tolist()]
+    uniq = list(dict.fromkeys(c for c in gen_cands if c is not None))  # order-preserving unique
 
     # Features for candidates, then ensemble-score via compute_scores (score_unseen).
     print(f"[audit] experimental extraction: {len(gens_df)} generations -> {len(uniq)} unique "
           f"candidates; computing LL features (4 passes: finetuned/base x {len(prompts)} prompts)...",
           flush=True)
-    feats = build_feature_frame(uniq, base_model, finetuned_model, prompts, label="gens ")
+    feats = cached_feature_frame(uniq, base_model, finetuned_model, prompts, out_dir, label="gens ")
     feats["groundtruth"] = check_names(uniq, members, nonmembers)
     ll_csv = os.path.join(out_dir, "all_names_ll_computed.csv")
     feats.to_csv(ll_csv, index=False)
@@ -216,7 +289,7 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
     # extracted-stream confusion matrix at any budget Q.
     first_seen = {}
     for i, c in enumerate(gen_cands):
-        if c not in first_seen:
+        if c is not None and c not in first_seen:
             first_seen[c] = i
     n_gen = len(gens_df)
 
@@ -290,7 +363,7 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
     try:
         import math
         from collections import Counter
-        counts = Counter(gen_cands)          # multiplicities over all N generations
+        counts = Counter(c for c in gen_cands if c is not None)   # multiplicities over valid extractions
         sdf = pd.read_csv(scores_csv)
         ll_col = f"ft_{di.primary_prompt}"
         rows = []
@@ -319,7 +392,9 @@ def experimental_report(gens_df, labeled_df, di, prompts, base_model, finetuned_
 
     return {"n_generations": int(n_gen),
             "unique_candidates": len(uniq_all),
+            "valid_extractions": int(sum(c is not None for c in gen_cands)),
             "strict_match": bool(strict_match),
+            "position_match": bool(position_match),
             "coverage_calibration": coverage_calibration,
             "name_filter_applied": bool(filter_names),
             "unique_candidates_before_filter": int(n_before_filter),
@@ -413,7 +488,7 @@ def run(args):
             gens_df, labeled, di, prompts, args.base_model, args.finetuned_model,
             scores_csv, models_dir, args.output_dir, tau, args.budgets,
             seed=args.seed, n_bootstrap=args.bootstrap, filter_names=args.filter_names,
-            strict_match=args.strict_match)
+            strict_match=args.strict_match, position_match=args.position_match)
 
     out = os.path.join(args.output_dir, "audit_report.json")
     with open(out, "w") as f:
@@ -446,6 +521,10 @@ def main():
     parser.add_argument("--strict-match", action="store_true",
                         help="Match generated candidates to members with EXACT case (skip .title()), "
                              "so extraction uses the same string that pi=exp(LL) is computed for")
+    parser.add_argument("--position-match", action="store_true",
+                        help="Count a completion as an extraction only when the name is at index 1 "
+                             "(a clean ' First Last' right after the prompt), as the paper's "
+                             "ner_ll_remaining does; aligns experimental coverage with pi")
     parser.add_argument("--output-dir", default="outputs/audit")
     args = parser.parse_args()
     run(args)
