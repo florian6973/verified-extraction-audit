@@ -38,6 +38,8 @@ LLM_MAX_TOKENS="${LLM_MAX_TOKENS:-}" # raise if a reasoning model needs more roo
 # --- training / eval ---
 BASE_MODEL="${BASE_MODEL:-models/base/Llama_3.2-1B}"
 N_EPOCHS="${N_EPOCHS:-3}"
+LR="${LR:-}"                         # optional: override finetune learning rate (default 2e-5)
+GRAD_ACCUM="${GRAD_ACCUM:-}"         # optional: override gradient accumulation steps (default 8)
 K="${K:-100000}"                     # attacker-query completions
 BUDGETS="${BUDGETS:-1e5 1e6}"
 AUDIT_ONLY="${AUDIT_ONLY:-}"         # set to 1 to skip steps 1-5 and re-audit existing $WORK artifacts
@@ -78,7 +80,8 @@ echo "==== [4/6] train (direct; no index) ===="
 $PYTHON "$REPO/src/finetuning/finetune.py" \
     --model_name_or_path "$BASE_MODEL" \
     --dataset_path "$SFT_TRAIN" \
-    --output_dir "$WORK/finetuned" --n_epochs "$N_EPOCHS"
+    --output_dir "$WORK/finetuned" --n_epochs "$N_EPOCHS" \
+    ${LR:+--learning_rate "$LR"} ${GRAD_ACCUM:+--gradient_accumulation_steps "$GRAD_ACCUM"}
 
 echo "==== [5/6] generate completions ===="
 $PYTHON -m src.evaluation.pipeline.generate_completions \
